@@ -21,6 +21,24 @@ export async function getExercisesByName(db: SQLiteDatabase, names: string[]): P
   )
 }
 
+export async function getOrCreateExercise(
+  db: SQLiteDatabase,
+  name: string,
+  muscleGroup = 'Custom',
+  equipment = 'Custom'
+): Promise<Exercise> {
+  const existing = await db.getFirstAsync<Exercise>(
+    'SELECT * FROM exercises WHERE name = ?',
+    [name]
+  )
+  if (existing) return existing
+  const result = await db.runAsync(
+    'INSERT INTO exercises (name, muscle_group, equipment) VALUES (?, ?, ?)',
+    [name, muscleGroup, equipment]
+  )
+  return { id: result.lastInsertRowId, name, muscle_group: muscleGroup, equipment }
+}
+
 export async function createWorkout(db: SQLiteDatabase, name: string): Promise<number> {
   const result = await db.runAsync(
     'INSERT INTO workouts (name, started_at) VALUES (?, ?)',
@@ -144,14 +162,88 @@ export async function getWeeklyVolume(
 
 export async function getAllPRs(
   db: SQLiteDatabase
-): Promise<{ exercise_name: string; weight_kg: number; reps: number }[]> {
-  return db.getAllAsync<{ exercise_name: string; weight_kg: number; reps: number }>(
-    `SELECT e.name as exercise_name, s.weight_kg, s.reps
+): Promise<{ exercise_name: string; weight_kg: number; reps: number; completed_at: number }[]> {
+  return db.getAllAsync<{
+    exercise_name: string
+    weight_kg: number
+    reps: number
+    completed_at: number
+  }>(
+    `SELECT e.name as exercise_name, s.weight_kg, s.reps, s.completed_at
      FROM sets s
      JOIN workout_exercises we ON s.workout_exercise_id = we.id
      JOIN exercises e ON we.exercise_id = e.id
      WHERE s.is_pr = 1
      GROUP BY we.exercise_id
-     ORDER BY s.weight_kg DESC`
+     ORDER BY s.completed_at DESC`
   )
+}
+
+export async function getWorkoutHistoryWithStats(
+  db: SQLiteDatabase,
+  limit = 30
+): Promise<
+  {
+    id: number
+    name: string
+    started_at: number
+    finished_at: number | null
+    exercise_count: number
+    set_count: number
+    volume: number
+  }[]
+> {
+  return db.getAllAsync(
+    `SELECT
+       w.id, w.name, w.started_at, w.finished_at,
+       COUNT(DISTINCT we.id) as exercise_count,
+       COUNT(s.id) as set_count,
+       COALESCE(SUM(CASE WHEN s.weight_kg IS NOT NULL AND s.reps IS NOT NULL THEN s.weight_kg * s.reps ELSE 0 END), 0) as volume
+     FROM workouts w
+     LEFT JOIN workout_exercises we ON we.workout_id = w.id
+     LEFT JOIN sets s ON s.workout_exercise_id = we.id AND s.completed = 1
+     WHERE w.finished_at IS NOT NULL
+     GROUP BY w.id
+     ORDER BY w.finished_at DESC
+     LIMIT ?`,
+    [limit]
+  )
+}
+
+export async function getMonthlyVolume(db: SQLiteDatabase): Promise<number> {
+  const monthStart = new Date()
+  monthStart.setDate(1)
+  monthStart.setHours(0, 0, 0, 0)
+  const row = await db.getFirstAsync<{ volume: number }>(
+    `SELECT COALESCE(SUM(s.weight_kg * s.reps), 0) as volume
+     FROM workouts w
+     JOIN workout_exercises we ON we.workout_id = w.id
+     JOIN sets s ON s.workout_exercise_id = we.id
+     WHERE s.completed = 1 AND s.weight_kg IS NOT NULL AND w.started_at >= ?`,
+    [monthStart.getTime()]
+  )
+  return row?.volume ?? 0
+}
+
+export async function getWorkoutStreak(db: SQLiteDatabase): Promise<number> {
+  const rows = await db.getAllAsync<{ day: string }>(
+    `SELECT DISTINCT date(started_at / 1000, 'unixepoch') as day
+     FROM workouts
+     WHERE finished_at IS NOT NULL
+     ORDER BY day DESC`
+  )
+  if (rows.length === 0) return 0
+  const days = new Set(rows.map((r) => r.day))
+  const fmt = (d: Date) => d.toISOString().slice(0, 10)
+  let cursor = new Date()
+  if (!days.has(fmt(cursor))) {
+    cursor.setDate(cursor.getDate() - 1)
+    if (!days.has(fmt(cursor))) return 0
+  }
+  let streak = 0
+  while (days.has(fmt(cursor))) {
+    streak++
+    cursor.setDate(cursor.getDate() - 1)
+  }
+  return streak
 }

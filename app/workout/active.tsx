@@ -2,85 +2,106 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TouchableOpacity,
+  TextInput,
   ScrollView,
   Alert,
-  Dimensions,
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useSQLiteContext } from 'expo-sqlite'
-import { useState, useEffect, useRef } from 'react'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { useState, useEffect, useMemo } from 'react'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
-import { colors, sp, r, fs } from '../../lib/theme'
+import Svg, { Circle } from 'react-native-svg'
+import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { useWorkoutStore } from '../../lib/store/workout'
 import {
   saveSet,
   finishWorkout as dbFinishWorkout,
   getPersonalRecord,
   deleteWorkout,
+  getOrCreateExercise,
+  addWorkoutExercise,
 } from '../../lib/db/queries'
-import { SetRow } from '../../components/workout/SetRow'
-import { RestTimer } from '../../components/workout/RestTimer'
-import type { ActiveExercise, ActiveSet } from '../../lib/types'
 
-const { width: W } = Dimensions.get('window')
+const REST_PRESETS = [60, 90, 120]
+const RING_R = 98
+const RING_CIRC = 2 * Math.PI * RING_R
 
 export default function ActiveWorkoutScreen() {
   const router = useRouter()
   const db = useSQLiteContext()
+  const insets = useSafeAreaInsets()
   const store = useWorkoutStore()
   const {
     workoutId,
     workoutName,
     exercises,
     currentExerciseIndex,
+    workoutView,
+    restDuration,
     restTimerEnd,
-    startedAt,
     setCurrentExercise,
+    addExercise,
     addSet,
-    updateSet,
-    completeSet,
     startRestTimer,
     stopRestTimer,
+    setRestDuration,
+    setView,
     finishWorkout: storeFinish,
     reset,
   } = store
 
-  const flatListRef = useRef<FlatList>(null)
-  const [elapsed, setElapsed] = useState(0)
+  const currentExercise = exercises[currentExerciseIndex]
+  const [repsInput, setRepsInput] = useState(currentExercise?.startReps ?? 8)
+  const [kgInput, setKgInput] = useState(currentExercise?.startKg ?? 20)
+  const [customExerciseName, setCustomExerciseName] = useState('')
   const [prLabel, setPrLabel] = useState<string | null>(null)
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (startedAt) setElapsed(Math.floor((Date.now() - startedAt) / 1000))
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [startedAt])
+    if (currentExercise) {
+      const last = currentExercise.loggedSets[currentExercise.loggedSets.length - 1]
+      setRepsInput(last?.reps ?? currentExercise.startReps)
+      setKgInput(last?.kg ?? currentExercise.startKg)
+    }
+  }, [currentExerciseIndex])
 
-  async function handleCompleteSet(exIdx: number, setIdx: number) {
-    const ex = exercises[exIdx]
-    const set = ex.sets[setIdx]
-    const weightKg = parseFloat(set.weightKg) || null
-    const reps = parseInt(set.reps, 10) || null
-
+  async function handleSaveSet() {
+    if (!currentExercise) return
+    const setNumber = currentExercise.loggedSets.length + 1
     let isPR = false
-    if (weightKg && ex.workoutExerciseId) {
-      const pr = await getPersonalRecord(db, ex.exerciseId)
-      if (!pr || weightKg > pr.weight_kg) {
+    if (currentExercise.workoutExerciseId) {
+      const pr = await getPersonalRecord(db, currentExercise.exerciseId)
+      if (!pr || kgInput > pr.weight_kg) {
         isPR = true
-        setPrLabel(ex.name)
-        setTimeout(() => setPrLabel(null), 2500)
+        setPrLabel(currentExercise.name)
+        setTimeout(() => setPrLabel(null), 2200)
       }
+      await saveSet(db, currentExercise.workoutExerciseId, setNumber, kgInput, repsInput, isPR)
     }
+    addSet(currentExerciseIndex, { reps: repsInput, kg: kgInput })
+  }
 
-    if (ex.workoutExerciseId) {
-      await saveSet(db, ex.workoutExerciseId, setIdx + 1, weightKg, reps, isPR)
-    }
-
-    completeSet(exIdx, setIdx, isPR)
-    startRestTimer()
+  async function handleAddCustomExercise() {
+    const name = customExerciseName.trim()
+    if (!name) return
+    const exercise = await getOrCreateExercise(db, name)
+    const workoutExerciseId = workoutId
+      ? await addWorkoutExercise(db, workoutId, exercise.id, exercises.length)
+      : undefined
+    addExercise({
+      workoutExerciseId,
+      exerciseId: exercise.id,
+      name,
+      muscleGroup: exercise.muscle_group,
+      equipment: exercise.equipment,
+      target: 'Custom exercise',
+      startReps: 8,
+      startKg: 20,
+      loggedSets: [],
+    })
+    setCustomExerciseName('')
+    setCurrentExercise(exercises.length)
   }
 
   function handleFinish() {
@@ -91,7 +112,6 @@ export default function ActiveWorkoutScreen() {
         onPress: async () => {
           if (workoutId) await dbFinishWorkout(db, workoutId)
           storeFinish()
-          router.back()
         },
       },
     ])
@@ -112,269 +132,682 @@ export default function ActiveWorkoutScreen() {
     ])
   }
 
-  const mins = Math.floor(elapsed / 60)
-  const secs = elapsed % 60
+  function handleDone() {
+    reset()
+    router.back()
+  }
+
+  // SafeAreaView reports unreliable (often zero) top insets inside
+  // fullScreenModal presentations, which stranded the close button under
+  // the dynamic island. Apply insets manually with a safe minimum instead.
+  const topInset = Math.max(insets.top, 54)
+  const bottomInset = Math.max(insets.bottom, sp.md)
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleDiscard} style={styles.headerBtn}>
-          <Ionicons name="close" size={22} color={colors.textSecondary} />
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {workoutName}
-          </Text>
-          <Text style={styles.headerTimer}>
-            {mins}:{String(secs).padStart(2, '0')}
-          </Text>
-        </View>
-        <TouchableOpacity onPress={handleFinish} style={styles.doneBtn}>
-          <Text style={styles.doneBtnText}>Finish</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Progress dots */}
-      <View style={styles.dotsRow}>
-        {exercises.map((_, i) => (
-          <TouchableOpacity
-            key={i}
-            hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-            onPress={() => {
-              setCurrentExercise(i)
-              flatListRef.current?.scrollToIndex({ index: i, animated: true })
-            }}
-          >
-            <View
-              style={[
-                styles.dot,
-                i === currentExerciseIndex && styles.dotActive,
-                i < currentExerciseIndex && styles.dotDone,
-              ]}
-            />
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* PR banner */}
+    <View style={[styles.safe, { paddingTop: topInset, paddingBottom: bottomInset }]}>
       {prLabel && (
-        <View style={styles.prBanner}>
-          <Ionicons name="trophy" size={15} color={colors.accentWarm} />
+        <View style={[styles.prBanner, { top: topInset + 8 }]}>
+          <Ionicons name="trophy" size={15} color={colors.accentDark} />
           <Text style={styles.prText}>New PR — {prLabel}!</Text>
         </View>
       )}
 
-      {/* Exercise pages */}
-      <FlatList
-        ref={flatListRef}
-        data={exercises}
-        keyExtractor={(_, i) => String(i)}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={(e) => {
-          const idx = Math.round(e.nativeEvent.contentOffset.x / W)
-          setCurrentExercise(idx)
-        }}
-        renderItem={({ item, index: exIdx }) => (
-          <ExercisePage
-            exercise={item}
-            exIdx={exIdx}
-            total={exercises.length}
-            onUpdateSet={(si, u) => updateSet(exIdx, si, u)}
-            onCompleteSet={(si) => handleCompleteSet(exIdx, si)}
-            onAddSet={() => addSet(exIdx)}
-          />
-        )}
-      />
-
-      {/* Rest timer */}
-      {restTimerEnd != null && (
-        <RestTimer
-          endTime={restTimerEnd}
-          onComplete={stopRestTimer}
-          onSkip={stopRestTimer}
-          onAdd30={() => {
-            const remaining = Math.max(0, Math.ceil((restTimerEnd - Date.now()) / 1000))
-            useWorkoutStore.getState().startRestTimer(remaining + 30)
-          }}
+      {workoutView === 'logging' && currentExercise && (
+        <LoggingView
+          exercise={currentExercise}
+          index={currentExerciseIndex}
+          total={exercises.length}
+          repsInput={repsInput}
+          kgInput={kgInput}
+          onReps={setRepsInput}
+          onKg={setKgInput}
+          onSave={handleSaveSet}
+          onExit={handleDiscard}
+          onOpenPicker={() => setView('picker')}
+          onStartRest={() => startRestTimer(restDuration)}
+          onFinish={handleFinish}
         />
       )}
-    </SafeAreaView>
+
+      {workoutView === 'picker' && (
+        <PickerView
+          programName={workoutName}
+          exercises={exercises}
+          currentIndex={currentExerciseIndex}
+          customName={customExerciseName}
+          onCustomNameChange={setCustomExerciseName}
+          onAddCustom={handleAddCustomExercise}
+          onPick={(i) => setCurrentExercise(i)}
+          onClose={() => setView('logging')}
+        />
+      )}
+
+      {workoutView === 'resting' && restTimerEnd != null && (
+        <RestingView
+          endTime={restTimerEnd}
+          restDuration={restDuration}
+          nextExerciseName={currentExercise?.name ?? ''}
+          onSkip={stopRestTimer}
+          onSetDuration={setRestDuration}
+        />
+      )}
+
+      {workoutView === 'summary' && (
+        <SummaryView workoutName={workoutName} exercises={exercises} onDone={handleDone} />
+      )}
+    </View>
   )
 }
 
-interface PageProps {
-  exercise: ActiveExercise
-  exIdx: number
+// ── Logging screen ──────────────────────────────────────────────
+function LoggingView({
+  exercise,
+  index,
+  total,
+  repsInput,
+  kgInput,
+  onReps,
+  onKg,
+  onSave,
+  onExit,
+  onOpenPicker,
+  onStartRest,
+  onFinish,
+}: {
+  exercise: NonNullable<ReturnType<typeof useWorkoutStore.getState>['exercises']>[number]
+  index: number
   total: number
-  onUpdateSet(si: number, u: Partial<Pick<ActiveSet, 'weightKg' | 'reps'>>): void
-  onCompleteSet(si: number): void
-  onAddSet(): void
-}
-
-function ExercisePage({ exercise, exIdx, total, onUpdateSet, onCompleteSet, onAddSet }: PageProps) {
+  repsInput: number
+  kgInput: number
+  onReps(v: number): void
+  onKg(v: number): void
+  onSave(): void
+  onExit(): void
+  onOpenPicker(): void
+  onStartRest(): void
+  onFinish(): void
+}) {
   return (
-    <View style={{ width: W }}>
-      {/* Exercise title */}
-      <View style={styles.exHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.exName}>{exercise.name}</Text>
-          <Text style={styles.exMeta}>
-            {exercise.muscleGroup} · {exercise.equipment}
-          </Text>
-        </View>
-        <Text style={styles.exCounter}>
-          {exIdx + 1} / {total}
+    <View style={styles.screen}>
+      <View style={styles.topRow}>
+        <RoundIconBtn icon="close" onPress={onExit} />
+        <Text style={styles.topLabel}>
+          EXERCISE {index + 1} OF {total}
         </Text>
+        <View style={{ width: 32 }} />
       </View>
 
-      <ScrollView
-        style={styles.setScroll}
-        contentContainerStyle={styles.setScrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Column labels */}
-        <View style={styles.colRow}>
-          <View style={{ width: 28 }}>
-            <Text style={styles.col}>SET</Text>
-          </View>
-          <Text style={[styles.col, { flex: 1 }]}>PREV</Text>
-          <Text style={[styles.col, { width: 68 }]}>KG</Text>
-          <Text style={[styles.col, { width: 52 }]}>REPS</Text>
-          <View style={{ width: 38 }} />
+      <View style={styles.exerciseHead}>
+        <Text style={styles.exerciseName}>{exercise.name}</Text>
+        <Text style={styles.exerciseTarget}>{exercise.target}</Text>
+      </View>
+
+      <View style={styles.stepperGroup}>
+        <Stepper label="Reps" value={repsInput} onChange={onReps} min={0} step={1} width={60} />
+        <Stepper label="Kg" value={kgInput} onChange={onKg} min={0} step={2.5} width={70} decimal />
+      </View>
+
+      {exercise.loggedSets.length > 0 && (
+        <View style={styles.chipsWrap}>
+          {exercise.loggedSets.map((set, i) => (
+            <View key={i} style={styles.setChip}>
+              <Text style={styles.setChipText}>
+                Set {i + 1}: {set.reps}×{set.kg}kg
+              </Text>
+            </View>
+          ))}
         </View>
+      )}
 
-        {exercise.sets.map((set, si) => (
-          <SetRow
-            key={si}
-            set={set}
-            previous={exercise.previousSets[si]}
-            onUpdate={(u) => onUpdateSet(si, u)}
-            onComplete={() => onCompleteSet(si)}
-          />
-        ))}
+      <View style={{ flex: 1 }} />
 
-        <TouchableOpacity style={styles.addSetBtn} onPress={onAddSet}>
-          <Ionicons name="add" size={16} color={colors.accent} />
-          <Text style={styles.addSetText}>Add Set</Text>
+      <View style={styles.actionsCol}>
+        <TouchableOpacity style={styles.primaryBtn} onPress={onSave} activeOpacity={0.88}>
+          <Text style={styles.primaryBtnText}>Save Set</Text>
         </TouchableOpacity>
+        <View style={styles.actionsRow}>
+          <TouchableOpacity style={styles.ghostBtn} onPress={onStartRest} activeOpacity={0.85}>
+            <Ionicons name="time-outline" size={15} color={colors.accentDark} />
+            <Text style={styles.ghostBtnText}>Rest</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.darkBtn} onPress={onOpenPicker} activeOpacity={0.85}>
+            <Text style={styles.darkBtnText}>New Exercise</Text>
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity onPress={onFinish} style={styles.finishLink}>
+          <Text style={styles.finishLinkText}>Finish Workout</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  )
+}
+
+function Stepper({
+  label,
+  value,
+  onChange,
+  min,
+  step,
+  width,
+  decimal,
+}: {
+  label: string
+  value: number
+  onChange(v: number): void
+  min: number
+  step: number
+  width: number
+  decimal?: boolean
+}) {
+  const display = decimal ? (Math.round(value * 10) / 10).toString() : String(value)
+  return (
+    <View style={styles.stepperCard}>
+      <Text style={styles.stepperLabel}>{label}</Text>
+      <View style={styles.stepperRow}>
+        <TouchableOpacity
+          style={styles.stepBtn}
+          onPress={() => onChange(Math.max(min, Math.round((value - step) * 10) / 10))}
+        >
+          <Text style={styles.stepBtnText}>–</Text>
+        </TouchableOpacity>
+        <Text style={[styles.stepperValue, { minWidth: width }]}>{display}</Text>
+        <TouchableOpacity style={styles.stepBtn} onPress={() => onChange(Math.round((value + step) * 10) / 10)}>
+          <Text style={styles.stepBtnText}>+</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  )
+}
+
+// ── Picker screen ────────────────────────────────────────────────
+function PickerView({
+  programName,
+  exercises,
+  currentIndex,
+  customName,
+  onCustomNameChange,
+  onAddCustom,
+  onPick,
+  onClose,
+}: {
+  programName: string
+  exercises: ReturnType<typeof useWorkoutStore.getState>['exercises']
+  currentIndex: number
+  customName: string
+  onCustomNameChange(v: string): void
+  onAddCustom(): void
+  onPick(i: number): void
+  onClose(): void
+}) {
+  return (
+    <View style={styles.screen}>
+      <View style={styles.topRow}>
+        <RoundIconBtn icon="close" onPress={onClose} />
+        <Text style={styles.topLabel}>CHOOSE EXERCISE</Text>
+        <View style={{ width: 32 }} />
+      </View>
+
+      <Text style={styles.pickerTitle}>{programName}</Text>
+
+      <View style={styles.customRow}>
+        <TextInput
+          style={styles.customInput}
+          value={customName}
+          onChangeText={onCustomNameChange}
+          placeholder="Add a custom exercise…"
+          placeholderTextColor={colors.textSecondary}
+          returnKeyType="done"
+          onSubmitEditing={onAddCustom}
+        />
+        <TouchableOpacity style={styles.addBtn} onPress={onAddCustom} activeOpacity={0.85}>
+          <Text style={styles.addBtnText}>Add</Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+        {exercises.map((ex, i) => {
+          const isCurrent = i === currentIndex
+          const count = ex.loggedSets.length
+          return (
+            <TouchableOpacity
+              key={i}
+              style={[styles.pickRow, isCurrent && styles.pickRowActive]}
+              onPress={() => onPick(i)}
+              activeOpacity={0.85}
+            >
+              <View style={[styles.pickDot, { backgroundColor: count > 0 ? colors.accentMid : colors.borderMed }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.pickName}>{ex.name}</Text>
+                <Text style={styles.pickTarget}>{ex.target}</Text>
+              </View>
+              <Text style={styles.pickSetsLabel}>
+                {count > 0 ? `${count} set${count > 1 ? 's' : ''} logged` : 'Not started'}
+              </Text>
+            </TouchableOpacity>
+          )
+        })}
       </ScrollView>
     </View>
   )
 }
 
+// ── Resting screen ───────────────────────────────────────────────
+function RestingView({
+  endTime,
+  restDuration,
+  nextExerciseName,
+  onSkip,
+  onSetDuration,
+}: {
+  endTime: number
+  restDuration: number
+  nextExerciseName: string
+  onSkip(): void
+  onSetDuration(seconds: number): void
+}) {
+  const [remaining, setRemaining] = useState(Math.max(0, Math.ceil((endTime - Date.now()) / 1000)))
+  const [usingCustom, setUsingCustom] = useState(!REST_PRESETS.includes(restDuration))
+  const [customValue, setCustomValue] = useState(restDuration)
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const r = Math.max(0, Math.ceil((endTime - Date.now()) / 1000))
+      setRemaining(r)
+      if (r === 0) {
+        clearInterval(id)
+        onSkip()
+      }
+    }, 200)
+    return () => clearInterval(id)
+  }, [endTime])
+
+  const pct = restDuration > 0 ? remaining / restDuration : 0
+  const mm = Math.floor(remaining / 60)
+  const ss = remaining % 60
+  const label = `${mm}:${ss < 10 ? '0' : ''}${ss}`
+
+  function selectPreset(sec: number) {
+    setUsingCustom(false)
+    onSetDuration(sec)
+  }
+
+  function selectCustom() {
+    setUsingCustom(true)
+    onSetDuration(customValue)
+  }
+
+  function bumpCustom(delta: number) {
+    const v = Math.max(15, Math.min(600, customValue + delta))
+    setCustomValue(v)
+    if (usingCustom) onSetDuration(v)
+  }
+
+  return (
+    <View style={[styles.screen, { alignItems: 'center' }]}>
+      <View style={styles.topRow}>
+        <RoundIconBtn icon="close" onPress={onSkip} />
+        <Text style={styles.topLabel}>RESTING</Text>
+        <View style={{ width: 32 }} />
+      </View>
+
+      <Text style={styles.upNextLabel}>Up next</Text>
+      <Text style={styles.upNextName}>{nextExerciseName}</Text>
+
+      <View style={styles.ringWrap}>
+        <Svg width={220} height={220} viewBox="0 0 220 220" style={{ transform: [{ rotate: '-90deg' }] }}>
+          <Circle cx={110} cy={110} r={RING_R} fill="none" stroke="rgba(20,30,20,0.08)" strokeWidth={10} />
+          <Circle
+            cx={110}
+            cy={110}
+            r={RING_R}
+            fill="none"
+            stroke={colors.accentDark}
+            strokeWidth={10}
+            strokeLinecap="round"
+            strokeDasharray={`${pct * RING_CIRC} ${RING_CIRC}`}
+          />
+        </Svg>
+        <Text style={styles.ringTime}>{label}</Text>
+      </View>
+
+      <View style={styles.presetRow}>
+        {REST_PRESETS.map((sec) => {
+          const active = !usingCustom && restDuration === sec
+          return (
+            <TouchableOpacity
+              key={sec}
+              style={[styles.presetChip, active && styles.presetChipActive]}
+              onPress={() => selectPreset(sec)}
+            >
+              <Text style={[styles.presetChipText, active && styles.presetChipTextActive]}>
+                {sec === 60 ? '1:00' : sec === 90 ? '1:30' : '2:00'}
+              </Text>
+            </TouchableOpacity>
+          )
+        })}
+        <TouchableOpacity
+          style={[styles.presetChip, usingCustom && styles.presetChipActive]}
+          onPress={selectCustom}
+        >
+          <Text style={[styles.presetChipText, usingCustom && styles.presetChipTextActive]}>Custom</Text>
+        </TouchableOpacity>
+      </View>
+
+      {usingCustom && (
+        <View style={styles.customRestRow}>
+          <TouchableOpacity style={styles.stepBtnSm} onPress={() => bumpCustom(-15)}>
+            <Text style={styles.stepBtnText}>–</Text>
+          </TouchableOpacity>
+          <Text style={styles.customRestLabel}>Custom: {customValue}s</Text>
+          <TouchableOpacity style={styles.stepBtnSm} onPress={() => bumpCustom(15)}>
+            <Text style={styles.stepBtnText}>+</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <View style={{ flex: 1 }} />
+      <TouchableOpacity style={styles.skipRestBtn} onPress={onSkip} activeOpacity={0.88}>
+        <Text style={styles.skipRestBtnText}>Skip Rest</Text>
+      </TouchableOpacity>
+    </View>
+  )
+}
+
+// ── Summary screen ───────────────────────────────────────────────
+function SummaryView({
+  workoutName,
+  exercises,
+  onDone,
+}: {
+  workoutName: string
+  exercises: ReturnType<typeof useWorkoutStore.getState>['exercises']
+  onDone(): void
+}) {
+  const summaryExercises = useMemo(() => exercises.filter((e) => e.loggedSets.length > 0), [exercises])
+  const totalSets = summaryExercises.reduce((s, e) => s + e.loggedSets.length, 0)
+  const totalVolume = summaryExercises.reduce(
+    (s, e) => s + e.loggedSets.reduce((s2, set) => s2 + set.reps * set.kg, 0),
+    0
+  )
+
+  return (
+    <View style={styles.screen}>
+      <View style={styles.summaryHead}>
+        <View style={styles.summaryCheck}>
+          <Ionicons name="checkmark" size={26} color={colors.accentMid} />
+        </View>
+        <Text style={styles.summaryTitle}>Workout Complete</Text>
+        <Text style={styles.summarySub}>{workoutName}</Text>
+      </View>
+
+      <View style={styles.summaryStatsRow}>
+        <SummaryStat value={String(summaryExercises.length)} label="Exercises" />
+        <SummaryStat value={String(totalSets)} label="Sets" />
+        <SummaryStat value={String(Math.round(totalVolume))} label="Kg Volume" />
+      </View>
+
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+        {summaryExercises.map((ex, i) => (
+          <View key={i} style={styles.summaryExCard}>
+            <Text style={styles.summaryExName}>{ex.name}</Text>
+            <View style={styles.chipsWrap}>
+              {ex.loggedSets.map((set, si) => (
+                <View key={si} style={styles.setChip}>
+                  <Text style={styles.setChipText}>
+                    {set.reps}×{set.kg}kg
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ))}
+      </ScrollView>
+
+      <TouchableOpacity style={styles.primaryBtn} onPress={onDone} activeOpacity={0.88}>
+        <Text style={styles.primaryBtnText}>Done</Text>
+      </TouchableOpacity>
+    </View>
+  )
+}
+
+function SummaryStat({ value, label }: { value: string; label: string }) {
+  return (
+    <View style={styles.summaryStatCard}>
+      <Text style={styles.summaryStatValue}>{value}</Text>
+      <Text style={styles.summaryStatLabel}>{label}</Text>
+    </View>
+  )
+}
+
+function RoundIconBtn({
+  icon,
+  onPress,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>['name']
+  onPress(): void
+}) {
+  return (
+    <TouchableOpacity onPress={onPress} style={styles.roundBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+      <Ionicons name={icon} size={16} color={colors.textMuted} />
+    </TouchableOpacity>
+  )
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: sp.sm,
-    paddingVertical: sp.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  headerBtn: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: {
-    color: colors.textPrimary,
-    fontSize: fs.md,
-    fontWeight: '700',
-    maxWidth: 200,
-  },
-  headerTimer: {
-    color: colors.accent,
-    fontSize: fs.sm,
-    fontWeight: '600',
-    marginTop: 1,
-  },
-  doneBtn: {
-    backgroundColor: colors.accent,
-    borderRadius: r.sm,
-    paddingHorizontal: sp.md,
-    paddingVertical: 9,
-  },
-  doneBtnText: { color: '#fff', fontSize: fs.sm, fontWeight: '700' },
-  dotsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: sp.sm,
-  },
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: colors.border,
-  },
-  dotActive: {
-    width: 20,
-    backgroundColor: colors.accent,
-    borderRadius: 4,
-  },
-  dotDone: { backgroundColor: colors.success },
+  screen: { flex: 1, padding: sp.md, paddingTop: sp.sm },
   prBanner: {
+    position: 'absolute',
+    top: 8,
+    left: sp.md,
+    right: sp.md,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
-    backgroundColor: colors.accentWarm + '1A',
-    marginHorizontal: sp.md,
+    backgroundColor: colors.surfaceGreen,
     borderRadius: r.md,
     paddingHorizontal: sp.md,
     paddingVertical: sp.sm,
-    marginBottom: sp.xs,
+    zIndex: 10,
     borderWidth: 1,
-    borderColor: colors.accentWarm + '55',
+    borderColor: colors.borderMed,
   },
-  prText: { color: colors.accentWarm, fontSize: fs.sm, fontWeight: '700' },
-  exHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingHorizontal: sp.md,
-    paddingTop: sp.sm,
-    paddingBottom: sp.md,
-  },
-  exName: { color: colors.textPrimary, fontSize: fs.xl, fontWeight: '800' },
-  exMeta: { color: colors.textSecondary, fontSize: fs.sm, marginTop: 3 },
-  exCounter: { color: colors.textSecondary, fontSize: fs.sm, fontWeight: '600' },
-  setScroll: { flex: 1, paddingHorizontal: sp.md },
-  setScrollContent: { paddingBottom: 200 },
-  colRow: {
-    flexDirection: 'row',
+  prText: { color: colors.accentDark, fontFamily: fonts.sansBold, fontSize: fs.sm },
+  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  roundBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.border,
     alignItems: 'center',
-    paddingVertical: sp.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    marginBottom: sp.xs,
-    gap: sp.sm,
+    justifyContent: 'center',
   },
-  col: {
+  topLabel: { color: colors.textSecondary, fontFamily: fonts.sansSemiBold, fontSize: fs.xs, letterSpacing: 0.6 },
+  exerciseHead: { alignItems: 'center', marginVertical: 18 },
+  exerciseName: { color: colors.textPrimary, fontFamily: fonts.serif, fontSize: 28, textAlign: 'center' },
+  exerciseTarget: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.sm, marginTop: 4 },
+  stepperGroup: { gap: 14, flex: 1, justifyContent: 'center' },
+  stepperCard: {
+    backgroundColor: colors.surface,
+    borderRadius: r.xl,
+    padding: sp.md,
+    alignItems: 'center',
+    gap: 10,
+  },
+  stepperLabel: {
     color: colors.textSecondary,
+    fontFamily: fonts.sansSemiBold,
     fontSize: fs.xs,
-    fontWeight: '700',
-    letterSpacing: 0.8,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
-  addSetBtn: {
+  stepperRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  stepBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.surfaceInput,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepBtnSm: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.surfaceInput,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepBtnText: { color: colors.textPrimary, fontSize: 20 },
+  stepperValue: {
+    color: colors.textPrimary,
+    fontFamily: fonts.monoBold,
+    fontSize: 40,
+    textAlign: 'center',
+  },
+  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 14 },
+  setChip: {
+    backgroundColor: colors.surfaceGreen,
+    borderWidth: 1,
+    borderColor: colors.borderMed,
+    borderRadius: r.full,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  setChipText: { color: colors.accentDark, fontFamily: fonts.mono, fontSize: fs.xs },
+  actionsCol: { gap: 10 },
+  primaryBtn: {
+    backgroundColor: colors.accentLime,
+    borderRadius: r.lg,
+    paddingVertical: 17,
+    alignItems: 'center',
+  },
+  primaryBtnText: { color: colors.textPrimary, fontFamily: fonts.sansBold, fontSize: fs.lg },
+  actionsRow: { flexDirection: 'row', gap: 10 },
+  ghostBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    marginTop: sp.md,
-    paddingVertical: sp.md,
-    backgroundColor: colors.surface,
-    borderRadius: r.md,
+    backgroundColor: 'rgba(30,75,58,0.08)',
     borderWidth: 1,
-    borderColor: colors.accent + '40',
-    borderStyle: 'dashed',
+    borderColor: colors.borderMed,
+    borderRadius: r.lg,
+    paddingVertical: 15,
   },
-  addSetText: { color: colors.accent, fontSize: fs.sm, fontWeight: '600' },
+  ghostBtnText: { color: colors.accentDark, fontFamily: fonts.sansSemiBold, fontSize: fs.sm },
+  darkBtn: {
+    flex: 1,
+    backgroundColor: colors.textPrimary,
+    borderRadius: r.lg,
+    paddingVertical: 15,
+    alignItems: 'center',
+  },
+  darkBtnText: { color: '#fff', fontFamily: fonts.sansSemiBold, fontSize: fs.sm },
+  skipRestBtn: {
+    alignSelf: 'center',
+    backgroundColor: colors.textPrimary,
+    borderRadius: r.full,
+    paddingHorizontal: 22,
+    paddingVertical: 10,
+    marginBottom: 4,
+  },
+  skipRestBtnText: { color: '#fff', fontFamily: fonts.sansSemiBold, fontSize: fs.xs },
+  finishLink: { alignItems: 'center', paddingVertical: 6 },
+  finishLinkText: {
+    color: colors.textSecondary,
+    fontFamily: fonts.sansSemiBold,
+    fontSize: fs.sm,
+    textDecorationLine: 'underline',
+  },
+  pickerTitle: {
+    color: colors.textPrimary,
+    fontFamily: fonts.serif,
+    fontSize: 24,
+    textAlign: 'center',
+    marginVertical: 14,
+  },
+  customRow: { flexDirection: 'row', gap: 8, marginBottom: sp.md },
+  customInput: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderMed,
+    borderRadius: r.md,
+    paddingHorizontal: sp.md,
+    paddingVertical: 12,
+    color: colors.textPrimary,
+    fontFamily: fonts.sans,
+    fontSize: fs.sm,
+  },
+  addBtn: {
+    backgroundColor: colors.textPrimary,
+    borderRadius: r.md,
+    paddingHorizontal: 18,
+    justifyContent: 'center',
+  },
+  addBtnText: { color: '#fff', fontFamily: fonts.sansSemiBold, fontSize: fs.sm },
+  pickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: r.lg,
+    padding: 14,
+    marginBottom: 10,
+  },
+  pickRowActive: { backgroundColor: colors.surfaceGreen, borderColor: colors.borderMed },
+  pickDot: { width: 8, height: 8, borderRadius: 4 },
+  pickName: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.md },
+  pickTarget: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.xs, marginTop: 2 },
+  pickSetsLabel: { color: colors.textMuted, fontFamily: fonts.sans, fontSize: fs.xs },
+  upNextLabel: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.md, marginTop: 10 },
+  upNextName: { color: colors.textPrimary, fontFamily: fonts.serif, fontSize: 24, marginBottom: 24 },
+  ringWrap: { width: 220, height: 220, alignItems: 'center', justifyContent: 'center' },
+  ringTime: {
+    position: 'absolute',
+    color: colors.textPrimary,
+    fontFamily: fonts.monoBold,
+    fontSize: 52,
+  },
+  presetRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginTop: 28 },
+  presetChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: r.full,
+    borderWidth: 1,
+    borderColor: colors.borderMed,
+  },
+  presetChipActive: { backgroundColor: 'rgba(30,75,58,0.1)', borderColor: colors.accentDark },
+  presetChipText: { color: colors.textSecondary, fontFamily: fonts.sansSemiBold, fontSize: fs.sm },
+  presetChipTextActive: { color: colors.accentDark },
+  customRestRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 16 },
+  customRestLabel: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.sm, minWidth: 90, textAlign: 'center' },
+  summaryHead: { alignItems: 'center', marginBottom: 18 },
+  summaryCheck: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.surfaceGreen,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  summaryTitle: { color: colors.textPrimary, fontFamily: fonts.serif, fontSize: 28 },
+  summarySub: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.sm, marginTop: 4 },
+  summaryStatsRow: { flexDirection: 'row', gap: 10, marginBottom: 18 },
+  summaryStatCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: r.lg,
+    padding: 14,
+    alignItems: 'center',
+  },
+  summaryStatValue: { color: colors.textPrimary, fontFamily: fonts.monoSemiBold, fontSize: fs.lg },
+  summaryStatLabel: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: 10, marginTop: 2 },
+  summaryExCard: { backgroundColor: colors.surface, borderRadius: r.lg, padding: 14, marginBottom: 10 },
+  summaryExName: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.md, marginBottom: 8 },
 })

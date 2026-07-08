@@ -3,6 +3,7 @@ import type { SQLiteDatabase } from 'expo-sqlite'
 const EXERCISES = [
   { name: 'Bench Press', muscle_group: 'Chest', equipment: 'Barbell' },
   { name: 'Incline DB Press', muscle_group: 'Chest', equipment: 'Dumbbell' },
+  { name: 'Incline Barbell Press', muscle_group: 'Chest', equipment: 'Barbell' },
   { name: 'Decline Bench Press', muscle_group: 'Chest', equipment: 'Barbell' },
   { name: 'Cable Fly', muscle_group: 'Chest', equipment: 'Cable' },
   { name: 'Dips', muscle_group: 'Chest', equipment: 'Bodyweight' },
@@ -10,6 +11,7 @@ const EXERCISES = [
 
   { name: 'Deadlift', muscle_group: 'Back', equipment: 'Barbell' },
   { name: 'Pull-Ups', muscle_group: 'Back', equipment: 'Bodyweight' },
+  { name: 'Chin-Ups', muscle_group: 'Back', equipment: 'Bodyweight' },
   { name: 'Barbell Row', muscle_group: 'Back', equipment: 'Barbell' },
   { name: 'Lat Pulldown', muscle_group: 'Back', equipment: 'Cable' },
   { name: 'Seated Cable Row', muscle_group: 'Back', equipment: 'Cable' },
@@ -20,6 +22,7 @@ const EXERCISES = [
   { name: 'Romanian Deadlift', muscle_group: 'Legs', equipment: 'Barbell' },
   { name: 'Leg Press', muscle_group: 'Legs', equipment: 'Machine' },
   { name: 'Lunges', muscle_group: 'Legs', equipment: 'Dumbbell' },
+  { name: 'Walking Lunge', muscle_group: 'Legs', equipment: 'Dumbbell' },
   { name: 'Leg Curl', muscle_group: 'Legs', equipment: 'Machine' },
   { name: 'Leg Extension', muscle_group: 'Legs', equipment: 'Machine' },
   { name: 'Calf Raises', muscle_group: 'Legs', equipment: 'Machine' },
@@ -36,6 +39,7 @@ const EXERCISES = [
   { name: 'Hammer Curl', muscle_group: 'Biceps', equipment: 'Dumbbell' },
   { name: 'Cable Curl', muscle_group: 'Biceps', equipment: 'Cable' },
   { name: 'Preacher Curl', muscle_group: 'Biceps', equipment: 'Barbell' },
+  { name: 'EZ-Bar Curl', muscle_group: 'Biceps', equipment: 'Barbell' },
 
   { name: 'Skull Crushers', muscle_group: 'Triceps', equipment: 'Barbell' },
   { name: 'Tricep Pushdown', muscle_group: 'Triceps', equipment: 'Cable' },

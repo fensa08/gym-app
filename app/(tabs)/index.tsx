@@ -1,42 +1,31 @@
-import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-} from 'react-native'
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native'
+import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter, useFocusEffect } from 'expo-router'
 import { useSQLiteContext } from 'expo-sqlite'
 import { useState, useCallback } from 'react'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { format, isToday, isYesterday, startOfWeek, addDays, isSameDay } from 'date-fns'
-import { colors, sp, r, fs } from '../../lib/theme'
-import {
-  getRecentWorkouts,
-  getExercisesByName,
-  getWorkoutStats,
-  createWorkout,
-  addWorkoutExercise,
-  getPreviousSets,
-} from '../../lib/db/queries'
+import { startOfWeek, addDays } from 'date-fns'
+import { colors, sp, r, fs, fonts } from '../../lib/theme'
+import { getRecentWorkouts, getWeeklyVolume, getAllPRs, getWorkoutStreak } from '../../lib/db/queries'
 import { useWorkoutStore } from '../../lib/store/workout'
+import { buildWorkoutFromTemplate } from '../../lib/workoutHelpers'
 import { TEMPLATES } from '../../lib/templates'
-import type { Workout, ActiveExercise } from '../../lib/types'
+import type { Workout } from '../../lib/types'
 
 const WEEK_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 
 export default function HomeScreen() {
   const db = useSQLiteContext()
   const router = useRouter()
-  const { isActive, workoutName } = useWorkoutStore()
+  const { isActive } = useWorkoutStore()
   const [recentWorkouts, setRecentWorkouts] = useState<Workout[]>([])
-  const [lastStats, setLastStats] = useState<{
-    exercise_count: number
-    set_count: number
-    volume: number
-  } | null>(null)
-  const [workoutDays, setWorkoutDays] = useState<number[]>([])
+  const [streak, setStreak] = useState(0)
+  const [prsThisMonth, setPrsThisMonth] = useState(0)
+  const [weeklyBars, setWeeklyBars] = useState<
+    { day: string; heightPct: number; color: string; isToday: boolean }[]
+  >([])
+  const [sessionsThisWeek, setSessionsThisWeek] = useState(0)
 
   useFocusEffect(
     useCallback(() => {
@@ -45,66 +34,52 @@ export default function HomeScreen() {
   )
 
   async function loadData() {
-    const ws = await getRecentWorkouts(db, 10)
+    const ws = await getRecentWorkouts(db, 30)
     setRecentWorkouts(ws)
-    if (ws.length > 0) {
-      const stats = await getWorkoutStats(db, ws[0].id)
-      setLastStats(stats ?? null)
-    }
+    setStreak(await getWorkoutStreak(db))
+
+    const prs = await getAllPRs(db)
+    const now = new Date()
+    setPrsThisMonth(
+      prs.filter((p) => {
+        const d = new Date(p.completed_at)
+        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+      }).length
+    )
+
     const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 })
-    const days: number[] = []
-    for (let i = 0; i < 7; i++) {
-      const day = addDays(weekStart, i)
-      if (ws.some((w) => isSameDay(new Date(w.started_at), day))) {
-        days.push(i)
-      }
-    }
-    setWorkoutDays(days)
+    const volumeRows = await getWeeklyVolume(db)
+    const volumeByDay = new Map(volumeRows.map((v) => [v.day, v.volume]))
+    let sessions = 0
+    const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
+    const isoDay = (d: Date) => d.toISOString().slice(0, 10)
+    const rawBars = days.map((d) => {
+      const vol = volumeByDay.get(isoDay(d)) ?? 0
+      if (vol > 0) sessions++
+      return { d, vol }
+    })
+    setSessionsThisWeek(sessions)
+    const maxVol = Math.max(...rawBars.map((b) => b.vol), 1)
+    setWeeklyBars(
+      rawBars.map(({ d, vol }, i) => ({
+        day: WEEK_LABELS[i],
+        heightPct: vol > 0 ? Math.max(8, Math.round((vol / maxVol) * 100)) : 4,
+        color: vol > 0 ? colors.accentLime : colors.border,
+        isToday: d.toDateString() === new Date().toDateString(),
+      }))
+    )
   }
 
   async function handleStartWorkout(templateIndex: number) {
     const template = TEMPLATES[templateIndex]
-    const exercises = await getExercisesByName(
-      db,
-      template.exercises.map((e) => e.name)
-    )
-    const workoutId = await createWorkout(db, template.name)
-    const activeExercises: ActiveExercise[] = []
-
-    for (let i = 0; i < template.exercises.length; i++) {
-      const tmpl = template.exercises[i]
-      const ex = exercises.find((e) => e.name === tmpl.name)
-      if (!ex) continue
-
-      const weId = await addWorkoutExercise(db, workoutId, ex.id, i)
-      const prevSets = await getPreviousSets(db, ex.id)
-
-      activeExercises.push({
-        workoutExerciseId: weId,
-        exerciseId: ex.id,
-        name: ex.name,
-        muscleGroup: ex.muscle_group,
-        equipment: ex.equipment,
-        sets: Array.from({ length: tmpl.sets }, (_, idx) => ({
-          setNumber: idx + 1,
-          weightKg: prevSets[idx]?.weight_kg ? String(prevSets[idx].weight_kg) : '',
-          reps: prevSets[idx]?.reps ? String(prevSets[idx].reps) : '',
-          completed: false,
-          isPR: false,
-        })),
-        previousSets: prevSets.map((p) => ({
-          weightKg: p.weight_kg,
-          reps: p.reps,
-        })),
-      })
-    }
-
-    useWorkoutStore.getState().startWorkout(workoutId, template.name, activeExercises)
+    const { workoutId, exercises } = await buildWorkoutFromTemplate(db, template)
+    useWorkoutStore.getState().startWorkout(workoutId, template.name, exercises)
     router.push('/workout/active')
   }
 
+  const suggestedIndex = recentWorkouts.length % TEMPLATES.length
+  const suggested = TEMPLATES[suggestedIndex]
   const lastWorkout = recentWorkouts[0]
-  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 })
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -116,13 +91,17 @@ export default function HomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View>
+            <Text style={styles.date}>{formatDate()}</Text>
             <Text style={styles.greeting}>{greeting()}</Text>
-            <Text style={styles.name}>Stefan</Text>
           </View>
-          <View style={styles.streakBadge}>
-            <Ionicons name="flame" size={15} color={colors.accentWarm} />
-            <Text style={styles.streakText}>{recentWorkouts.length} total</Text>
-          </View>
+          <LinearGradient
+            colors={[colors.accentLime, colors.accentDark]}
+            style={styles.avatar}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <Text style={styles.avatarLetter}>A</Text>
+          </LinearGradient>
         </View>
 
         {/* Active workout resume banner */}
@@ -133,292 +112,291 @@ export default function HomeScreen() {
             activeOpacity={0.85}
           >
             <View style={styles.activePulse} />
-            <Text style={styles.activeBannerText}>
-              Workout in progress · {workoutName}
-            </Text>
-            <Ionicons name="chevron-forward" size={15} color={colors.accent} />
+            <Text style={styles.activeBannerText}>Workout in progress — tap to resume</Text>
+            <Ionicons name="chevron-forward" size={15} color={colors.accentLime} />
           </TouchableOpacity>
         )}
 
-        {/* Last workout card */}
-        {lastWorkout && (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>LAST WORKOUT</Text>
-            <View style={styles.card}>
-              <View style={styles.cardTop}>
-                <Text style={styles.cardTitle}>{lastWorkout.name}</Text>
-                <Text style={styles.cardDate}>{fmtDate(lastWorkout.started_at)}</Text>
-              </View>
-              {lastStats && (
-                <View style={styles.statsRow}>
-                  <Stat
-                    icon="barbell-outline"
-                    value={String(lastStats.exercise_count)}
-                    label="exercises"
-                  />
-                  <Stat
-                    icon="checkmark-circle-outline"
-                    value={String(lastStats.set_count)}
-                    label="sets"
-                  />
-                  <Stat
-                    icon="trending-up-outline"
-                    value={fmtVolume(lastStats.volume)}
-                    label="kg vol"
-                  />
-                </View>
-              )}
-            </View>
-          </View>
-        )}
-
-        {/* Weekly calendar */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>THIS WEEK</Text>
-          <View style={styles.week}>
-            {WEEK_LABELS.map((label, i) => {
-              const day = addDays(weekStart, i)
-              const today = isToday(day)
-              const done = workoutDays.includes(i)
-              const future = day > new Date() && !today
-              return (
-                <View key={i} style={styles.dayCol}>
-                  <Text
-                    style={[styles.dayLabel, today && { color: colors.accent }]}
-                  >
-                    {label}
-                  </Text>
-                  <View
-                    style={[
-                      styles.dayDot,
-                      done && { backgroundColor: colors.success },
-                      today && !done && {
-                        borderWidth: 2,
-                        borderColor: colors.accent,
-                      },
-                      future && { opacity: 0.25 },
-                    ]}
-                  />
-                </View>
-              )
-            })}
-          </View>
+        {/* Stat chips */}
+        <View style={styles.statsRow}>
+          <StatChip icon="flame-outline" value={String(streak)} label="day streak" />
+          <StatChip icon="git-compare-outline" value={`${sessionsThisWeek}/5`} label="sessions" />
+          <StatChip icon="trophy-outline" value={String(prsThisMonth)} label="PRs this month" iconColor={colors.accentMid} />
         </View>
 
-        {/* Start Workout CTA */}
+        {/* Today's Workout hero */}
         {!isActive && (
-          <TouchableOpacity
-            style={styles.startBtn}
-            onPress={() => handleStartWorkout(0)}
-            activeOpacity={0.88}
+          <LinearGradient
+            colors={[colors.accentDark, colors.accentDarker]}
+            style={styles.hero}
           >
-            <Ionicons name="add" size={22} color="#fff" />
-            <Text style={styles.startBtnText}>Start Workout</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Quick template chips */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>QUICK START</Text>
-          <View style={styles.templateRow}>
-            {TEMPLATES.map((t, i) => (
+            <Text style={styles.heroLabel}>Today's Workout</Text>
+            <Text style={styles.heroDuration}>~{suggested.duration} min</Text>
+            <Text style={styles.heroTitle}>
+              {suggested.name} — {suggested.sub}
+            </Text>
+            <Text style={styles.heroMeta}>
+              {suggested.exercises.length} exercises
+              {lastWorkout ? ` · last done ${fmtRelative(lastWorkout.started_at)}` : ''}
+            </Text>
+            <View style={styles.heroActions}>
               <TouchableOpacity
-                key={t.name}
-                style={[styles.templateChip, { borderColor: t.color + '55' }]}
-                onPress={() => handleStartWorkout(i)}
+                style={styles.heroStartBtn}
+                onPress={() => handleStartWorkout(suggestedIndex)}
+                activeOpacity={0.88}
+              >
+                <Ionicons name="play" size={16} color={colors.textPrimary} />
+                <Text style={styles.heroStartText}>Start Workout</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.heroPlanBtn}
+                onPress={() => router.push('/workouts')}
                 activeOpacity={0.8}
               >
-                <View style={[styles.templateDot, { backgroundColor: t.color }]} />
-                <Text style={styles.templateLabel}>{t.tag}</Text>
+                <Text style={styles.heroPlanText}>Plan</Text>
               </TouchableOpacity>
+            </View>
+          </LinearGradient>
+        )}
+
+        {/* Weekly chart */}
+        <View style={styles.card}>
+          <View style={styles.cardTop}>
+            <Text style={styles.cardTitle}>This Week</Text>
+            <Text style={styles.cardTrend}>{sessionsThisWeek} sessions</Text>
+          </View>
+          <View style={styles.bars}>
+            {weeklyBars.map((bar, i) => (
+              <View key={i} style={styles.barCol}>
+                <View
+                  style={[styles.barFill, { height: `${bar.heightPct}%`, backgroundColor: bar.color }]}
+                />
+                <Text style={[styles.barLabel, bar.isToday && styles.barLabelToday]}>{bar.day}</Text>
+              </View>
             ))}
           </View>
         </View>
 
-        {/* History */}
-        {recentWorkouts.length > 0 && (
-          <View style={[styles.section, { marginBottom: 32 }]}>
-            <Text style={styles.sectionLabel}>RECENT</Text>
-            {recentWorkouts.slice(0, 5).map((w) => (
-              <View key={w.id} style={styles.historyRow}>
-                <View style={styles.historyDot} />
-                <Text style={styles.historyName}>{w.name}</Text>
-                <Text style={styles.historyDate}>{fmtDate(w.started_at)}</Text>
-              </View>
-            ))}
-          </View>
-        )}
+        {/* Coming soon */}
+        <Text style={styles.sectionLabel}>More Coming Soon</Text>
+        <View style={styles.soonRow}>
+          <SoonChip icon="leaf-outline" label="Nutrition" />
+          <SoonChip icon="water-outline" label="Hydration" />
+          <SoonChip icon="pulse-outline" label="Activity" />
+        </View>
       </ScrollView>
     </SafeAreaView>
   )
 }
 
-function Stat({
+function StatChip({
   icon,
   value,
   label,
+  iconColor = colors.accentDark,
 }: {
   icon: React.ComponentProps<typeof Ionicons>['name']
   value: string
   label: string
+  iconColor?: string
 }) {
   return (
     <View style={styles.statChip}>
-      <Ionicons name={icon} size={12} color={colors.textSecondary} />
+      <Ionicons name={icon} size={16} color={iconColor} />
       <Text style={styles.statValue}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   )
 }
 
+function SoonChip({
+  icon,
+  label,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>['name']
+  label: string
+}) {
+  return (
+    <View style={styles.soonChip}>
+      <Ionicons name={icon} size={18} color={colors.textSecondary} />
+      <Text style={styles.soonLabel}>{label}</Text>
+      <View style={styles.soonBadge}>
+        <Text style={styles.soonBadgeText}>Soon</Text>
+      </View>
+    </View>
+  )
+}
+
 function greeting() {
   const h = new Date().getHours()
-  if (h < 12) return 'Good morning,'
-  if (h < 17) return 'Good afternoon,'
-  return 'Good evening,'
+  const name = 'Alex'
+  if (h < 12) return `Good morning, ${name}`
+  if (h < 17) return `Good afternoon, ${name}`
+  return `Good evening, ${name}`
 }
 
-function fmtDate(ts: number) {
-  const d = new Date(ts)
-  if (isToday(d)) return 'Today'
-  if (isYesterday(d)) return 'Yesterday'
-  return format(d, 'EEE, MMM d')
+function formatDate() {
+  return new Date()
+    .toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+    .toUpperCase()
 }
 
-function fmtVolume(v: number) {
-  if (v >= 1000) return `${(v / 1000).toFixed(1)}k`
-  return String(Math.round(v))
+function fmtRelative(ts: number) {
+  const days = Math.floor((Date.now() - ts) / 86400000)
+  if (days <= 0) return 'today'
+  if (days === 1) return 'yesterday'
+  return `${days} days ago`
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   scroll: { flex: 1 },
-  content: { padding: sp.md, paddingTop: sp.sm },
+  content: { padding: sp.md, paddingTop: sp.sm, paddingBottom: 120 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: sp.lg,
+    alignItems: 'flex-start',
+    marginBottom: sp.md,
     marginTop: sp.xs,
   },
-  greeting: { color: colors.textSecondary, fontSize: fs.sm },
-  name: { color: colors.textPrimary, fontSize: fs.xxl, fontWeight: '800', marginTop: 1 },
-  streakBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: r.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
+  date: {
+    color: colors.textSecondary,
+    fontFamily: fonts.sansSemiBold,
+    fontSize: fs.xs,
+    letterSpacing: 1.2,
+    marginBottom: 6,
   },
-  streakText: { color: colors.textPrimary, fontSize: fs.sm, fontWeight: '600' },
+  greeting: {
+    color: colors.textPrimary,
+    fontFamily: fonts.serif,
+    fontSize: 30,
+    lineHeight: 34,
+  },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarLetter: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.md },
   activeBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: colors.accent + '18',
+    backgroundColor: colors.accentDark,
     borderRadius: r.md,
     padding: sp.md,
     marginBottom: sp.md,
-    borderWidth: 1,
-    borderColor: colors.accent + '40',
   },
-  activePulse: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.accent,
+  activePulse: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accentLime },
+  activeBannerText: {
+    flex: 1,
+    color: '#fff',
+    fontFamily: fonts.sansSemiBold,
+    fontSize: fs.sm,
   },
-  activeBannerText: { flex: 1, color: colors.accent, fontSize: fs.sm, fontWeight: '600' },
-  section: { marginBottom: sp.lg },
-  sectionLabel: {
-    color: colors.textSecondary,
-    fontSize: fs.xs,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    marginBottom: sp.sm,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: r.lg,
-    padding: sp.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  cardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: sp.sm,
-  },
-  cardTitle: { color: colors.textPrimary, fontSize: fs.lg, fontWeight: '700' },
-  cardDate: { color: colors.textSecondary, fontSize: fs.sm },
-  statsRow: { flexDirection: 'row', gap: sp.sm },
+  statsRow: { flexDirection: 'row', gap: sp.sm, marginBottom: sp.sm },
   statChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: colors.surfaceElevated,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: r.sm,
-  },
-  statValue: { color: colors.textPrimary, fontSize: fs.sm, fontWeight: '600' },
-  statLabel: { color: colors.textSecondary, fontSize: fs.xs },
-  week: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flex: 1,
     backgroundColor: colors.surface,
-    borderRadius: r.lg,
-    padding: sp.md,
     borderWidth: 1,
     borderColor: colors.border,
-  },
-  dayCol: { alignItems: 'center', gap: 6 },
-  dayLabel: { color: colors.textSecondary, fontSize: fs.xs, fontWeight: '600' },
-  dayDot: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: colors.surfaceElevated,
-  },
-  startBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: colors.accent,
     borderRadius: r.lg,
-    paddingVertical: 18,
-    marginBottom: sp.lg,
+    padding: 12,
+    gap: 6,
   },
-  startBtnText: { color: '#fff', fontSize: fs.lg, fontWeight: '700', letterSpacing: 0.3 },
-  templateRow: { flexDirection: 'row', gap: sp.sm },
-  templateChip: {
+  statValue: { color: colors.textPrimary, fontFamily: fonts.monoSemiBold, fontSize: fs.xl },
+  statLabel: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.xs },
+  hero: {
+    borderRadius: r.xl,
+    padding: sp.md + 4,
+    marginTop: sp.sm,
+    marginBottom: sp.md,
+  },
+  heroLabel: {
+    color: colors.accentLime,
+    fontFamily: fonts.sansSemiBold,
+    fontSize: fs.xs,
+    letterSpacing: 1.2,
+    marginBottom: 4,
+  },
+  heroDuration: {
+    position: 'absolute',
+    top: sp.md + 4,
+    right: sp.md + 4,
+    color: 'rgba(255,255,255,0.6)',
+    fontFamily: fonts.sans,
+    fontSize: fs.xs,
+  },
+  heroTitle: {
+    color: '#fff',
+    fontFamily: fonts.sansBold,
+    fontSize: fs.xl,
+    marginBottom: 4,
+  },
+  heroMeta: { color: 'rgba(255,255,255,0.7)', fontFamily: fonts.sans, fontSize: fs.sm, marginBottom: 18 },
+  heroActions: { flexDirection: 'row', gap: 10 },
+  heroStartBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    backgroundColor: colors.surface,
+    gap: 8,
+    backgroundColor: colors.accentLime,
     borderRadius: r.md,
-    paddingVertical: 13,
+    paddingVertical: 14,
+  },
+  heroStartText: { color: colors.textPrimary, fontFamily: fonts.sansBold, fontSize: fs.md },
+  heroPlanBtn: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
     borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    borderRadius: r.md,
+    paddingHorizontal: 18,
+    justifyContent: 'center',
   },
-  templateDot: { width: 8, height: 8, borderRadius: 4 },
-  templateLabel: { color: colors.textPrimary, fontSize: fs.sm, fontWeight: '600' },
-  historyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: sp.md,
-    paddingVertical: sp.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+  heroPlanText: { color: '#fff', fontFamily: fonts.sansSemiBold, fontSize: fs.md },
+  card: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: r.lg,
+    padding: sp.md,
+    marginBottom: sp.md,
   },
-  historyDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.accent },
-  historyName: { flex: 1, color: colors.textPrimary, fontSize: fs.md, fontWeight: '500' },
-  historyDate: { color: colors.textSecondary, fontSize: fs.sm },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: sp.md },
+  cardTitle: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.sm },
+  cardTrend: { color: colors.accentMid, fontFamily: fonts.mono, fontSize: fs.sm },
+  bars: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, height: 84 },
+  barCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: '100%', gap: 6 },
+  barFill: { width: '100%', maxWidth: 26, minHeight: 4, borderRadius: 6 },
+  barLabel: { color: colors.textSecondary, fontFamily: fonts.sansMedium, fontSize: 10 },
+  barLabelToday: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold },
+  sectionLabel: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.sm, marginBottom: 10 },
+  soonRow: { flexDirection: 'row', gap: sp.sm },
+  soonChip: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: r.lg,
+    padding: 12,
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  soonLabel: { color: colors.textMuted, fontFamily: fonts.sansMedium, fontSize: fs.sm },
+  soonBadge: {
+    backgroundColor: colors.border,
+    borderRadius: r.full,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  soonBadgeText: {
+    color: colors.textSecondary,
+    fontFamily: fonts.sansSemiBold,
+    fontSize: 9,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
 })

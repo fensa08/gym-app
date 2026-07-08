@@ -1,25 +1,26 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native'
+import { LinearGradient } from 'expo-linear-gradient'
 import { useState, useCallback } from 'react'
 import { useFocusEffect } from 'expo-router'
 import { useSQLiteContext } from 'expo-sqlite'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { Ionicons } from '@expo/vector-icons'
-import { colors, sp, r, fs } from '../../lib/theme'
-import { getRecentWorkouts, getAllPRs } from '../../lib/db/queries'
+import { colors, sp, r, fs, fonts } from '../../lib/theme'
+import { getRecentWorkouts, getAllPRs, getWorkoutStreak } from '../../lib/db/queries'
 
-type IoniconName = React.ComponentProps<typeof Ionicons>['name']
-
-const SETTINGS: { label: string; value: string; icon: IoniconName }[] = [
-  { label: 'Default Rest Time', value: '2:00', icon: 'timer-outline' },
-  { label: 'Weight Unit', value: 'kg', icon: 'scale-outline' },
-  { label: 'Theme', value: 'Dark', icon: 'moon-outline' },
-  { label: 'Notifications', value: 'On', icon: 'notifications-outline' },
+const SETTINGS: { label: string; value: string; badge?: boolean }[] = [
+  { label: 'Units', value: 'Kilograms (kg)' },
+  { label: 'Default Rest Timer', value: '90s' },
+  { label: 'Notifications', value: 'On' },
+  { label: 'Form Check (Camera)', value: '', badge: true },
+  { label: 'Nutrition Tracking', value: '', badge: true },
+  { label: 'Activity Monitor', value: '', badge: true },
 ]
 
 export default function ProfileScreen() {
   const db = useSQLiteContext()
   const [workoutCount, setWorkoutCount] = useState(0)
   const [prCount, setPrCount] = useState(0)
+  const [streak, setStreak] = useState(0)
 
   useFocusEffect(
     useCallback(() => {
@@ -28,9 +29,14 @@ export default function ProfileScreen() {
   )
 
   async function loadData() {
-    const [ws, prs] = await Promise.all([getRecentWorkouts(db, 1000), getAllPRs(db)])
+    const [ws, prs, s] = await Promise.all([
+      getRecentWorkouts(db, 1000),
+      getAllPRs(db),
+      getWorkoutStreak(db),
+    ])
     setWorkoutCount(ws.length)
     setPrCount(prs.length)
+    setStreak(s)
   }
 
   return (
@@ -38,65 +44,55 @@ export default function ProfileScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Avatar */}
         <View style={styles.avatarWrap}>
-          <View style={styles.avatar}>
+          <LinearGradient
+            colors={[colors.accentLime, colors.accentDark]}
+            style={styles.avatar}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
             <Text style={styles.avatarLetter}>S</Text>
-          </View>
+          </LinearGradient>
           <Text style={styles.name}>Stefan</Text>
-          <Text style={styles.email}>stefan.apostolovski97@gmail.com</Text>
+          <Text style={styles.since}>Member since Jan 2026</Text>
         </View>
 
         {/* Stats */}
-        <View style={styles.statsCard}>
-          <StatBox icon="barbell" value={String(workoutCount)} label="Workouts" color={colors.accent} />
-          <View style={styles.divider} />
-          <StatBox icon="trophy" value={String(prCount)} label="Records" color="#FFB800" />
-          <View style={styles.divider} />
-          <StatBox icon="flame" value="—" label="Streak" color={colors.accentWarm} />
+        <View style={styles.statsRow}>
+          <StatBox value={String(workoutCount)} label="Workouts" />
+          <StatBox value={String(streak)} label="Day Streak" />
+          <StatBox value={String(prCount)} label="Total PRs" />
         </View>
 
         {/* Settings */}
-        <Text style={styles.sectionLabel}>SETTINGS</Text>
+        <Text style={styles.sectionLabel}>Preferences</Text>
         <View style={styles.settingsCard}>
           {SETTINGS.map((s, i) => (
-            <TouchableOpacity
-              key={s.label}
-              style={[
-                styles.settingRow,
-                i < SETTINGS.length - 1 && styles.settingRowBorder,
-              ]}
-              activeOpacity={0.7}
-            >
-              <View style={styles.settingIcon}>
-                <Ionicons name={s.icon} size={17} color={colors.accent} />
-              </View>
+            <View key={s.label} style={[styles.settingRow, i < SETTINGS.length - 1 && styles.settingRowBorder]}>
               <Text style={styles.settingLabel}>{s.label}</Text>
-              <Text style={styles.settingValue}>{s.value}</Text>
-              <Ionicons name="chevron-forward" size={15} color={colors.border} />
-            </TouchableOpacity>
+              <View style={styles.settingRight}>
+                {s.value ? <Text style={styles.settingValue}>{s.value}</Text> : null}
+                {s.badge && (
+                  <View style={styles.soonBadge}>
+                    <Text style={styles.soonBadgeText}>Soon</Text>
+                  </View>
+                )}
+              </View>
+            </View>
           ))}
         </View>
 
-        <Text style={styles.version}>Gym Tracker · v1.0.0</Text>
+        <TouchableOpacity style={styles.signOutBtn} activeOpacity={0.85}>
+          <Text style={styles.signOutText}>Sign Out</Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   )
 }
 
-function StatBox({
-  icon,
-  value,
-  label,
-  color,
-}: {
-  icon: IoniconName
-  value: string
-  label: string
-  color: string
-}) {
+function StatBox({ value, label }: { value: string; label: string }) {
   return (
     <View style={styles.statBox}>
-      <Ionicons name={icon} size={20} color={color} />
-      <Text style={[styles.statValue, { color }]}>{value}</Text>
+      <Text style={styles.statValue}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   )
@@ -104,72 +100,64 @@ function StatBox({
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  content: {
-    padding: sp.md,
-    alignItems: 'center',
-    paddingBottom: 100,
-  },
-  avatarWrap: { alignItems: 'center', marginBottom: sp.lg, marginTop: sp.sm },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: sp.md,
-  },
-  avatarLetter: { color: '#fff', fontSize: 34, fontWeight: '800' },
-  name: { color: colors.textPrimary, fontSize: fs.xl, fontWeight: '700' },
-  email: { color: colors.textSecondary, fontSize: fs.sm, marginTop: 4 },
-  statsCard: {
-    flexDirection: 'row',
-    alignSelf: 'stretch',
+  content: { padding: sp.md, paddingBottom: 120 },
+  avatarWrap: { alignItems: 'center', gap: 10, marginTop: sp.sm, marginBottom: sp.md },
+  avatar: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' },
+  avatarLetter: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.xxl },
+  name: { color: colors.textPrimary, fontFamily: fonts.serif, fontSize: 26 },
+  since: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.sm },
+  statsRow: { flexDirection: 'row', gap: sp.sm, marginBottom: sp.lg },
+  statBox: {
+    flex: 1,
     backgroundColor: colors.surface,
-    borderRadius: r.lg,
-    padding: sp.md,
-    marginBottom: sp.xl,
     borderWidth: 1,
     borderColor: colors.border,
+    borderRadius: r.md,
+    padding: 14,
+    alignItems: 'center',
   },
-  statBox: { flex: 1, alignItems: 'center', gap: 4 },
-  statValue: { fontSize: fs.xl, fontWeight: '800' },
-  statLabel: { color: colors.textSecondary, fontSize: fs.xs },
-  divider: { width: 1, backgroundColor: colors.border, marginVertical: sp.xs },
-  sectionLabel: {
-    color: colors.textSecondary,
-    fontSize: fs.xs,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    alignSelf: 'flex-start',
-    marginBottom: sp.sm,
-  },
+  statValue: { color: colors.textPrimary, fontFamily: fonts.monoSemiBold, fontSize: fs.lg },
+  statLabel: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: 10, marginTop: 2 },
+  sectionLabel: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.sm, marginBottom: sp.sm },
   settingsCard: {
-    alignSelf: 'stretch',
     backgroundColor: colors.surface,
-    borderRadius: r.lg,
     borderWidth: 1,
     borderColor: colors.border,
+    borderRadius: r.lg,
     overflow: 'hidden',
-    marginBottom: sp.xl,
+    marginBottom: sp.lg,
   },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: sp.md,
-    paddingVertical: sp.md,
+    paddingVertical: 13,
     paddingHorizontal: sp.md,
   },
   settingRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
-  settingIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: r.sm,
-    backgroundColor: colors.accent + '18',
-    alignItems: 'center',
-    justifyContent: 'center',
+  settingLabel: { flex: 1, color: colors.textPrimary, fontFamily: fonts.sans, fontSize: fs.md },
+  settingRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  settingValue: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.sm },
+  soonBadge: {
+    backgroundColor: colors.border,
+    borderRadius: r.full,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
   },
-  settingLabel: { flex: 1, color: colors.textPrimary, fontSize: fs.md },
-  settingValue: { color: colors.textSecondary, fontSize: fs.sm },
-  version: { color: colors.border, fontSize: fs.xs, marginTop: sp.md },
+  soonBadgeText: {
+    color: colors.textSecondary,
+    fontFamily: fonts.sansSemiBold,
+    fontSize: 9,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  signOutBtn: {
+    backgroundColor: 'rgba(224,87,92,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(224,87,92,0.25)',
+    borderRadius: r.md,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  signOutText: { color: colors.error, fontFamily: fonts.sansSemiBold, fontSize: fs.md },
 })

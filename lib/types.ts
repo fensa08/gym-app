@@ -13,13 +13,9 @@ export interface Workout {
   notes: string | null
 }
 
-export interface ActiveSet {
-  id?: number
-  setNumber: number
-  weightKg: string
-  reps: string
-  completed: boolean
-  isPR: boolean
+export interface LoggedSet {
+  reps: number
+  kg: number
 }
 
 export interface ActiveExercise {
@@ -28,6 +24,8 @@ export interface ActiveExercise {
   name: string
   muscleGroup: string
   equipment: string
-  sets: ActiveSet[]
-  previousSets: { weightKg: number | null; reps: number | null }[]
+  target: string
+  startReps: number
+  startKg: number
+  loggedSets: LoggedSet[]
 }
