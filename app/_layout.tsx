@@ -38,6 +38,34 @@ export default function RootLayout() {
             animation: 'slide_from_bottom',
           }}
         />
+        <Stack.Screen
+          name="body/log-weight"
+          options={{
+            presentation: 'transparentModal',
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="body/log-composition"
+          options={{
+            presentation: 'transparentModal',
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="recovery/log"
+          options={{
+            presentation: 'transparentModal',
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="nutrition/log"
+          options={{
+            presentation: 'transparentModal',
+            animation: 'slide_from_bottom',
+          }}
+        />
       </Stack>
     </SQLiteProvider>
   )

@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import Svg, { Circle } from 'react-native-svg'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
-import { useWorkoutStore } from '../../lib/store/workout'
+import { useWorkoutStore, type RestLogEntry } from '../../lib/store/workout'
 import {
   saveSet,
   finishWorkout as dbFinishWorkout,
@@ -23,6 +23,8 @@ import {
   getOrCreateExercise,
   addWorkoutExercise,
 } from '../../lib/db/queries'
+import { setWorkoutRpe as dbSetWorkoutRpe, setExerciseRpe as dbSetExerciseRpe } from '../../lib/db/queriesHealth'
+import { RPESelector } from '../../components/Selectors'
 
 const REST_PRESETS = [60, 90, 120]
 const RING_R = 98
@@ -41,12 +43,18 @@ export default function ActiveWorkoutScreen() {
     workoutView,
     restDuration,
     restTimerEnd,
+    restLog,
+    overallRpe,
+    perExerciseRpe,
     setCurrentExercise,
     addExercise,
     addSet,
     startRestTimer,
     stopRestTimer,
     setRestDuration,
+    logRest,
+    setOverallRpe,
+    setExerciseRpe,
     setView,
     finishWorkout: storeFinish,
     reset,
@@ -109,12 +117,28 @@ export default function ActiveWorkoutScreen() {
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Finish',
-        onPress: async () => {
-          if (workoutId) await dbFinishWorkout(db, workoutId)
-          storeFinish()
-        },
+        onPress: () => setView('rpe'),
       },
     ])
+  }
+
+  function handleFinishRest(actualSeconds: number) {
+    if (actualSeconds > 0 && currentExercise) {
+      logRest(currentExerciseIndex, currentExercise.name, restDuration, actualSeconds)
+    }
+    stopRestTimer()
+  }
+
+  async function handleConfirmRpe() {
+    if (workoutId) {
+      if (overallRpe != null) await dbSetWorkoutRpe(db, workoutId, overallRpe)
+      for (const [indexStr, rpe] of Object.entries(perExerciseRpe)) {
+        const ex = exercises[Number(indexStr)]
+        if (ex?.workoutExerciseId) await dbSetExerciseRpe(db, ex.workoutExerciseId, rpe)
+      }
+      await dbFinishWorkout(db, workoutId)
+    }
+    storeFinish()
   }
 
   function handleDiscard() {
@@ -187,8 +211,20 @@ export default function ActiveWorkoutScreen() {
           endTime={restTimerEnd}
           restDuration={restDuration}
           nextExerciseName={currentExercise?.name ?? ''}
-          onSkip={stopRestTimer}
+          onFinishRest={handleFinishRest}
           onSetDuration={setRestDuration}
+        />
+      )}
+
+      {workoutView === 'rpe' && (
+        <RpeView
+          exercises={exercises}
+          restLog={restLog}
+          overallRpe={overallRpe}
+          perExerciseRpe={perExerciseRpe}
+          onSetOverallRpe={setOverallRpe}
+          onSetExerciseRpe={setExerciseRpe}
+          onConfirm={handleConfirmRpe}
         />
       )}
 
@@ -396,13 +432,13 @@ function RestingView({
   endTime,
   restDuration,
   nextExerciseName,
-  onSkip,
+  onFinishRest,
   onSetDuration,
 }: {
   endTime: number
   restDuration: number
   nextExerciseName: string
-  onSkip(): void
+  onFinishRest(actualSeconds: number): void
   onSetDuration(seconds: number): void
 }) {
   const [remaining, setRemaining] = useState(Math.max(0, Math.ceil((endTime - Date.now()) / 1000)))
@@ -415,11 +451,15 @@ function RestingView({
       setRemaining(r)
       if (r === 0) {
         clearInterval(id)
-        onSkip()
+        onFinishRest(restDuration)
       }
     }, 200)
     return () => clearInterval(id)
   }, [endTime])
+
+  function handleSkip() {
+    onFinishRest(Math.max(0, restDuration - remaining))
+  }
 
   const pct = restDuration > 0 ? remaining / restDuration : 0
   const mm = Math.floor(remaining / 60)
@@ -445,7 +485,7 @@ function RestingView({
   return (
     <View style={[styles.screen, { alignItems: 'center' }]}>
       <View style={styles.topRow}>
-        <RoundIconBtn icon="close" onPress={onSkip} />
+        <RoundIconBtn icon="close" onPress={handleSkip} />
         <Text style={styles.topLabel}>RESTING</Text>
         <View style={{ width: 32 }} />
       </View>
@@ -506,11 +546,161 @@ function RestingView({
       )}
 
       <View style={{ flex: 1 }} />
-      <TouchableOpacity style={styles.skipRestBtn} onPress={onSkip} activeOpacity={0.88}>
+      <TouchableOpacity style={styles.skipRestBtn} onPress={handleSkip} activeOpacity={0.88}>
         <Text style={styles.skipRestBtnText}>Skip Rest</Text>
       </TouchableOpacity>
     </View>
   )
+}
+
+// ── RPE / rest summary screen ─────────────────────────────────────
+function RpeView({
+  exercises,
+  restLog,
+  overallRpe,
+  perExerciseRpe,
+  onSetOverallRpe,
+  onSetExerciseRpe,
+  onConfirm,
+}: {
+  exercises: ReturnType<typeof useWorkoutStore.getState>['exercises']
+  restLog: RestLogEntry[]
+  overallRpe: number | null
+  perExerciseRpe: Record<number, number>
+  onSetOverallRpe(rpe: number): void
+  onSetExerciseRpe(exerciseIndex: number, rpe: number): void
+  onConfirm(): void
+}) {
+  const [perExerciseOpen, setPerExerciseOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const ratedExercises = useMemo(
+    () =>
+      exercises
+        .map((ex, index) => ({ ...ex, index }))
+        .filter((ex) => ex.loggedSets.length > 0),
+    [exercises]
+  )
+
+  const restSummary = useMemo(() => {
+    const byExercise = new Map<number, { exerciseName: string; target: number; actuals: number[] }>()
+    for (const entry of restLog) {
+      const existing = byExercise.get(entry.exerciseIndex)
+      if (existing) {
+        existing.actuals.push(entry.actual)
+      } else {
+        byExercise.set(entry.exerciseIndex, {
+          exerciseName: entry.exerciseName,
+          target: entry.target,
+          actuals: [entry.actual],
+        })
+      }
+    }
+    return Array.from(byExercise.values()).map((v) => ({
+      exerciseName: v.exerciseName,
+      target: v.target,
+      actualAvg: Math.round(v.actuals.reduce((s, a) => s + a, 0) / v.actuals.length),
+    }))
+  }, [restLog])
+
+  async function handleConfirm() {
+    setSaving(true)
+    await onConfirm()
+  }
+
+  return (
+    <View style={styles.screen}>
+      <View style={styles.topRow}>
+        <View style={{ width: 32 }} />
+        <Text style={styles.topLabel}>SESSION RATING</Text>
+        <View style={{ width: 32 }} />
+      </View>
+
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+        <Text style={styles.rpeHeadline}>How hard was this session?</Text>
+        <View style={styles.rpeSelectorWrap}>
+          <RPESelector value={overallRpe} onChange={onSetOverallRpe} />
+        </View>
+
+        {ratedExercises.length > 0 && (
+          <View style={styles.rpeCollapseSection}>
+            <TouchableOpacity
+              style={styles.rpeCollapseHeader}
+              onPress={() => setPerExerciseOpen((v) => !v)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.rpeCollapseTitle}>Per-Exercise RPE</Text>
+              <Text style={styles.rpeCollapseSub}>Optional — rate each exercise</Text>
+              <Ionicons
+                name={perExerciseOpen ? 'chevron-up' : 'chevron-down'}
+                size={16}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
+            {perExerciseOpen && (
+              <View style={{ gap: 18, marginTop: sp.sm }}>
+                {ratedExercises.map((ex) => (
+                  <View key={ex.index}>
+                    <Text style={styles.rpeExerciseName}>{ex.name}</Text>
+                    <RPESelector
+                      value={perExerciseRpe[ex.index] ?? null}
+                      onChange={(v) => onSetExerciseRpe(ex.index, v)}
+                    />
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
+        {restSummary.length > 0 && (
+          <View style={styles.rpeTableCard}>
+            <Text style={styles.rpeTableTitle}>Rest Time Summary</Text>
+            <View style={styles.rpeTableHeaderRow}>
+              <Text style={[styles.rpeTableHeaderText, { flex: 1.4 }]}>Exercise</Text>
+              <Text style={styles.rpeTableHeaderText}>Target</Text>
+              <Text style={styles.rpeTableHeaderText}>Actual</Text>
+            </View>
+            {restSummary.map((row, i) => {
+              const withinTarget = Math.abs(row.actualAvg - row.target) <= 15
+              return (
+                <View
+                  key={i}
+                  style={[styles.rpeTableRow, i < restSummary.length - 1 && styles.rpeTableRowBorder]}
+                >
+                  <Text style={[styles.rpeTableCell, { flex: 1.4 }]}>{row.exerciseName}</Text>
+                  <Text style={styles.rpeTableCell}>{fmtSeconds(row.target)}</Text>
+                  <Text
+                    style={[
+                      styles.rpeTableCell,
+                      { color: withinTarget ? colors.accentMid : '#c98a2e', fontFamily: fonts.monoSemiBold },
+                    ]}
+                  >
+                    {fmtSeconds(row.actualAvg)}
+                  </Text>
+                </View>
+              )
+            })}
+          </View>
+        )}
+      </ScrollView>
+
+      <TouchableOpacity
+        style={[styles.primaryBtn, saving && { opacity: 0.6 }]}
+        onPress={handleConfirm}
+        disabled={saving}
+        activeOpacity={0.88}
+      >
+        <Text style={styles.primaryBtnText}>{saving ? 'Saving…' : 'Confirm & Save'}</Text>
+      </TouchableOpacity>
+    </View>
+  )
+}
+
+function fmtSeconds(total: number) {
+  const mm = Math.floor(total / 60)
+  const ss = total % 60
+  return `${mm}:${ss < 10 ? '0' : ''}${ss}`
 }
 
 // ── Summary screen ───────────────────────────────────────────────
@@ -810,4 +1000,46 @@ const styles = StyleSheet.create({
   summaryStatLabel: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: 10, marginTop: 2 },
   summaryExCard: { backgroundColor: colors.surface, borderRadius: r.lg, padding: 14, marginBottom: 10 },
   summaryExName: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.md, marginBottom: 8 },
+  rpeHeadline: {
+    color: colors.textPrimary,
+    fontFamily: fonts.serif,
+    fontSize: 24,
+    textAlign: 'center',
+    marginTop: 14,
+    marginBottom: 18,
+  },
+  rpeSelectorWrap: { marginBottom: 20 },
+  rpeCollapseSection: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: r.lg,
+    padding: sp.md,
+    marginBottom: sp.md,
+  },
+  rpeCollapseHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  rpeCollapseTitle: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.sm },
+  rpeCollapseSub: { flex: 1, color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.xs },
+  rpeExerciseName: { color: colors.textPrimary, fontFamily: fonts.sansMedium, fontSize: fs.sm, marginBottom: 8 },
+  rpeTableCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: r.lg,
+    padding: sp.md,
+    marginBottom: sp.md,
+  },
+  rpeTableTitle: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.sm, marginBottom: 10 },
+  rpeTableHeaderRow: { flexDirection: 'row', paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
+  rpeTableHeaderText: {
+    flex: 1,
+    color: colors.textSecondary,
+    fontFamily: fonts.sansSemiBold,
+    fontSize: 10,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  rpeTableRow: { flexDirection: 'row', paddingVertical: 12 },
+  rpeTableRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  rpeTableCell: { flex: 1, color: colors.textPrimary, fontFamily: fonts.sans, fontSize: fs.sm },
 })

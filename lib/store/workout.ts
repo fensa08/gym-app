@@ -1,7 +1,14 @@
 import { create } from 'zustand'
 import type { ActiveExercise, LoggedSet } from '../types'
 
-type WorkoutView = 'logging' | 'picker' | 'resting' | 'summary'
+type WorkoutView = 'logging' | 'picker' | 'resting' | 'rpe' | 'summary'
+
+export interface RestLogEntry {
+  exerciseIndex: number
+  exerciseName: string
+  target: number
+  actual: number
+}
 
 interface WorkoutStore {
   isActive: boolean
@@ -13,6 +20,9 @@ interface WorkoutStore {
   workoutView: WorkoutView
   restDuration: number
   restTimerEnd: number | null
+  restLog: RestLogEntry[]
+  overallRpe: number | null
+  perExerciseRpe: Record<number, number>
 
   startWorkout(id: number, name: string, exercises: ActiveExercise[]): void
   setView(view: WorkoutView): void
@@ -22,6 +32,9 @@ interface WorkoutStore {
   startRestTimer(duration?: number): void
   stopRestTimer(): void
   setRestDuration(seconds: number): void
+  logRest(exerciseIndex: number, exerciseName: string, target: number, actual: number): void
+  setOverallRpe(rpe: number): void
+  setExerciseRpe(exerciseIndex: number, rpe: number): void
   finishWorkout(): void
   reset(): void
 }
@@ -36,6 +49,9 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
   workoutView: 'logging',
   restDuration: 60,
   restTimerEnd: null,
+  restLog: [],
+  overallRpe: null,
+  perExerciseRpe: {},
 
   startWorkout(id, name, exercises) {
     set({
@@ -83,6 +99,18 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
     set({ restDuration: seconds, restTimerEnd: Date.now() + seconds * 1000 })
   },
 
+  logRest(exerciseIndex, exerciseName, target, actual) {
+    set({ restLog: [...get().restLog, { exerciseIndex, exerciseName, target, actual }] })
+  },
+
+  setOverallRpe(rpe) {
+    set({ overallRpe: rpe })
+  },
+
+  setExerciseRpe(exerciseIndex, rpe) {
+    set({ perExerciseRpe: { ...get().perExerciseRpe, [exerciseIndex]: rpe } })
+  },
+
   finishWorkout() {
     set({ isActive: false, workoutView: 'summary' })
   },
@@ -97,6 +125,9 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
       currentExerciseIndex: 0,
       workoutView: 'logging',
       restTimerEnd: null,
+      restLog: [],
+      overallRpe: null,
+      perExerciseRpe: {},
     })
   },
 }))
