@@ -36,7 +36,7 @@ export async function getOrCreateExercise(
     'INSERT INTO exercises (name, muscle_group, equipment) VALUES (?, ?, ?)',
     [name, muscleGroup, equipment]
   )
-  return { id: result.lastInsertRowId, name, muscle_group: muscleGroup, equipment }
+  return { id: String(result.lastInsertRowId), name, muscle_group: muscleGroup, equipment }
 }
 
 export async function createWorkout(db: SQLiteDatabase, name: string): Promise<number> {

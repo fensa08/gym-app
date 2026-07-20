@@ -1,6 +1,5 @@
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native'
 import { useRouter, useFocusEffect } from 'expo-router'
-import { useSQLiteContext } from 'expo-sqlite'
 import { useState, useCallback } from 'react'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -14,17 +13,16 @@ import {
   SIGNAL_COLORS,
   type Signal,
 } from '../../lib/insights'
-import { getStaleExercises, markStalenessResolved } from '../../lib/db/queriesHealth'
+import { getStaleExercises, markStalenessResolved } from '../../lib/firestore/queriesHealth'
 
 export default function InsightsScreen() {
-  const db = useSQLiteContext()
   const router = useRouter()
   const [bodyComp, setBodyComp] = useState<Signal | null>(null)
   const [readiness, setReadiness] = useState<Signal | null>(null)
   const [bulkQuality, setBulkQuality] = useState<Signal | null>(null)
   const [calibration, setCalibration] = useState<Signal | null>(null)
   const [staleExercises, setStaleExercises] = useState<
-    { exercise_id: number; exercise_name: string; days_since_pr: number }[]
+    { exercise_id: string; exercise_name: string; days_since_pr: number }[]
   >([])
 
   useFocusEffect(
@@ -35,11 +33,11 @@ export default function InsightsScreen() {
 
   async function loadData() {
     const [bc, ready, bq, cal, stale] = await Promise.all([
-      getBodyCompositionSignal(db),
-      getReadinessSignal(db),
-      getBulkQualitySignal(db),
-      getCalibrationSignal(db),
-      getStaleExercises(db),
+      getBodyCompositionSignal(),
+      getReadinessSignal(),
+      getBulkQualitySignal(),
+      getCalibrationSignal(),
+      getStaleExercises(),
     ])
     setBodyComp(bc)
     setReadiness(ready)
@@ -48,8 +46,8 @@ export default function InsightsScreen() {
     setStaleExercises(stale)
   }
 
-  async function handleResolve(exerciseId: number) {
-    await markStalenessResolved(db, exerciseId)
+  async function handleResolve(exerciseId: string) {
+    await markStalenessResolved(exerciseId)
     loadData()
   }
 

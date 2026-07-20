@@ -1,12 +1,12 @@
 export interface Exercise {
-  id: number
+  id: string
   name: string
   muscle_group: string
   equipment: string
 }
 
 export interface Workout {
-  id: number
+  id: string
   name: string
   started_at: number
   finished_at: number | null
@@ -20,8 +20,8 @@ export interface LoggedSet {
 }
 
 export interface ActiveExercise {
-  workoutExerciseId?: number
-  exerciseId: number
+  workoutExerciseId?: string
+  exerciseId: string
   name: string
   muscleGroup: string
   equipment: string

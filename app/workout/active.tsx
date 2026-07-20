@@ -8,7 +8,6 @@ import {
   Alert,
 } from 'react-native'
 import { useRouter } from 'expo-router'
-import { useSQLiteContext } from 'expo-sqlite'
 import { useState, useEffect, useMemo } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -22,8 +21,8 @@ import {
   deleteWorkout,
   getOrCreateExercise,
   addWorkoutExercise,
-} from '../../lib/db/queries'
-import { setWorkoutRpe as dbSetWorkoutRpe, setExerciseRpe as dbSetExerciseRpe } from '../../lib/db/queriesHealth'
+} from '../../lib/firestore/queries'
+import { setWorkoutRpe as dbSetWorkoutRpe, setExerciseRpe as dbSetExerciseRpe } from '../../lib/firestore/queries'
 import { RPESelector } from '../../components/Selectors'
 
 const REST_PRESETS = [60, 90, 120]
@@ -32,7 +31,6 @@ const RING_CIRC = 2 * Math.PI * RING_R
 
 export default function ActiveWorkoutScreen() {
   const router = useRouter()
-  const db = useSQLiteContext()
   const insets = useSafeAreaInsets()
   const store = useWorkoutStore()
   const {
@@ -79,13 +77,13 @@ export default function ActiveWorkoutScreen() {
     const setNumber = currentExercise.loggedSets.length + 1
     let isPR = false
     if (currentExercise.workoutExerciseId) {
-      const pr = await getPersonalRecord(db, currentExercise.exerciseId)
+      const pr = await getPersonalRecord(currentExercise.exerciseId)
       if (!pr || kgInput > pr.weight_kg) {
         isPR = true
         setPrLabel(currentExercise.name)
         setTimeout(() => setPrLabel(null), 2200)
       }
-      await saveSet(db, currentExercise.workoutExerciseId, setNumber, kgInput, repsInput, isPR)
+      await saveSet(workoutId!, currentExercise.workoutExerciseId!, setNumber, kgInput, repsInput, isPR)
     }
     addSet(currentExerciseIndex, { reps: repsInput, kg: kgInput })
   }
@@ -93,9 +91,9 @@ export default function ActiveWorkoutScreen() {
   async function handleAddCustomExercise() {
     const name = customExerciseName.trim()
     if (!name) return
-    const exercise = await getOrCreateExercise(db, name)
+    const exercise = await getOrCreateExercise(name)
     const workoutExerciseId = workoutId
-      ? await addWorkoutExercise(db, workoutId, exercise.id, exercises.length)
+      ? await addWorkoutExercise(workoutId!, exercise.id, exercises.length, exercise.name)
       : undefined
     addExercise({
       workoutExerciseId,
@@ -131,12 +129,12 @@ export default function ActiveWorkoutScreen() {
 
   async function handleConfirmRpe() {
     if (workoutId) {
-      if (overallRpe != null) await dbSetWorkoutRpe(db, workoutId, overallRpe)
+      if (overallRpe != null) await dbSetWorkoutRpe(workoutId!, overallRpe)
       for (const [indexStr, rpe] of Object.entries(perExerciseRpe)) {
         const ex = exercises[Number(indexStr)]
-        if (ex?.workoutExerciseId) await dbSetExerciseRpe(db, ex.workoutExerciseId, rpe)
+        if (ex?.workoutExerciseId) await dbSetExerciseRpe(workoutId!, ex.workoutExerciseId, rpe)
       }
-      await dbFinishWorkout(db, workoutId)
+      await dbFinishWorkout(workoutId!)
     }
     storeFinish()
   }
@@ -148,7 +146,7 @@ export default function ActiveWorkoutScreen() {
         text: 'Discard',
         style: 'destructive',
         onPress: async () => {
-          if (workoutId) await deleteWorkout(db, workoutId)
+          if (workoutId) await deleteWorkout(workoutId!)
           reset()
           router.back()
         },

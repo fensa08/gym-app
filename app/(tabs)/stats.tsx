@@ -1,12 +1,11 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native'
 import { useState, useCallback } from 'react'
 import { useRouter, useFocusEffect } from 'expo-router'
-import { useSQLiteContext } from 'expo-sqlite'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Svg, { Circle } from 'react-native-svg'
 import { format } from 'date-fns'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
-import { getWeeklyVolume, getAllPRs, getRecentWorkouts, getMonthlyVolume } from '../../lib/db/queries'
+import { getWeeklyVolume, getAllPRs, getRecentWorkouts, getMonthlyVolume } from '../../lib/firestore/queries'
 import {
   getBodyWeightLogs,
   getBodyCompositionHistory,
@@ -16,7 +15,7 @@ import {
   getNutritionLogs,
   getStaleExercises,
   getMaintenanceCalibration,
-} from '../../lib/db/queriesHealth'
+} from '../../lib/firestore/queriesHealth'
 import { computeFFMI, getTopInsight, SIGNAL_COLORS, type SignalColor } from '../../lib/insights'
 import { CategoryTabRow } from '../../components/CategoryTabRow'
 import { LineChart, DivergingBarChart } from '../../components/Charts'
@@ -39,7 +38,6 @@ const TABS: { key: StatsTab; label: string }[] = [
 ]
 
 export default function StatsScreen() {
-  const db = useSQLiteContext()
   const router = useRouter()
   const [tab, setTab] = useState<StatsTab>('training')
 
@@ -77,10 +75,10 @@ export default function StatsScreen() {
 
   async function loadData() {
     const [volumeRows, allPrs, recent, monthly] = await Promise.all([
-      getWeeklyVolume(db),
-      getAllPRs(db),
-      getRecentWorkouts(db, 100),
-      getMonthlyVolume(db),
+      getWeeklyVolume(),
+      getAllPRs(),
+      getRecentWorkouts(100),
+      getMonthlyVolume(),
     ])
     const today = new Date()
     const monday = new Date(today)
@@ -106,19 +104,19 @@ export default function StatsScreen() {
     setMonthlyVol(monthly)
     setPrs(allPrs)
 
-    const goals = await getUserGoals(db)
+    const goals = await getUserGoals()
     setHeightCm(goals.height_cm)
     setCalorieGoal(goals.calorie_goal)
     setProteinGoal(goals.protein_goal)
 
     const [w, c, rec, nut, stale, calib, insight] = await Promise.all([
-      getBodyWeightLogs(db, 30),
-      getBodyCompositionHistory(db, 60),
-      getRecoveryLogs(db, 30),
-      getNutritionLogs(db, 30),
-      getStaleExercises(db),
-      getMaintenanceCalibration(db),
-      getTopInsight(db),
+      getBodyWeightLogs(30),
+      getBodyCompositionHistory(60),
+      getRecoveryLogs(30),
+      getNutritionLogs(30),
+      getStaleExercises(),
+      getMaintenanceCalibration(),
+      getTopInsight(),
     ])
     setWeights(w)
     setComps(c)

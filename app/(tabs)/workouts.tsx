@@ -1,24 +1,22 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native'
 import { useRouter, useFocusEffect } from 'expo-router'
-import { useSQLiteContext } from 'expo-sqlite'
 import { useState, useCallback } from 'react'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
-import { getRecentWorkouts } from '../../lib/db/queries'
+import { getRecentWorkouts } from '../../lib/firestore/queries'
 import { useWorkoutStore } from '../../lib/store/workout'
 import { buildWorkoutFromTemplate } from '../../lib/workoutHelpers'
 import { TEMPLATES } from '../../lib/templates'
 import type { Workout } from '../../lib/types'
 
 export default function WorkoutsScreen() {
-  const db = useSQLiteContext()
   const router = useRouter()
   const [recentWorkouts, setRecentWorkouts] = useState<Workout[]>([])
 
   useFocusEffect(
     useCallback(() => {
-      getRecentWorkouts(db, 30).then(setRecentWorkouts)
+      getRecentWorkouts(30).then(setRecentWorkouts)
     }, [])
   )
 
@@ -34,7 +32,7 @@ export default function WorkoutsScreen() {
 
   async function handleStart(templateIndex: number) {
     const template = TEMPLATES[templateIndex]
-    const { workoutId, exercises } = await buildWorkoutFromTemplate(db, template)
+    const { workoutId, exercises } = await buildWorkoutFromTemplate(template)
     useWorkoutStore.getState().startWorkout(workoutId, template.name, exercises)
     router.push('/workout/active')
   }

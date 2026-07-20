@@ -1,14 +1,13 @@
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter, useFocusEffect } from 'expo-router'
-import { useSQLiteContext } from 'expo-sqlite'
 import { useState, useCallback } from 'react'
 import { Ionicons } from '@expo/vector-icons'
 import Svg, { Path, Circle as SvgCircle } from 'react-native-svg'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { startOfWeek, addDays } from 'date-fns'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
-import { getRecentWorkouts, getWeeklyVolume, getAllPRs, getWorkoutStreak } from '../../lib/db/queries'
+import { getRecentWorkouts, getWeeklyVolume, getAllPRs, getWorkoutStreak } from '../../lib/firestore/queries'
 import {
   getLatestRecoveryLog,
   getTodayNutritionLog,
@@ -17,7 +16,7 @@ import {
   getLatestBodyWeight,
   getDaysSinceLastMeasurement,
   readinessScore,
-} from '../../lib/db/queriesHealth'
+} from '../../lib/firestore/queriesHealth'
 import { getTopInsight, SIGNAL_COLORS, type SignalColor } from '../../lib/insights'
 import { useWorkoutStore } from '../../lib/store/workout'
 import { buildWorkoutFromTemplate } from '../../lib/workoutHelpers'
@@ -27,7 +26,6 @@ import type { Workout, BodyWeightLog, RecoveryLog, NutritionLog, UserGoals } fro
 const WEEK_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 
 export default function HomeScreen() {
-  const db = useSQLiteContext()
   const router = useRouter()
   const { isActive } = useWorkoutStore()
   const [recentWorkouts, setRecentWorkouts] = useState<Workout[]>([])
@@ -52,18 +50,18 @@ export default function HomeScreen() {
   )
 
   async function loadData() {
-    const ws = await getRecentWorkouts(db, 30)
+    const ws = await getRecentWorkouts(30)
     setRecentWorkouts(ws)
-    setStreak(await getWorkoutStreak(db))
+    setStreak(await getWorkoutStreak())
 
     const [rec, nut, g, latestW, spark, daysSince, insight] = await Promise.all([
-      getLatestRecoveryLog(db),
-      getTodayNutritionLog(db),
-      getUserGoals(db),
-      getLatestBodyWeight(db),
-      getBodyWeightLogs(db, 7),
-      getDaysSinceLastMeasurement(db),
-      getTopInsight(db),
+      getLatestRecoveryLog(),
+      getTodayNutritionLog(),
+      getUserGoals(),
+      getLatestBodyWeight(),
+      getBodyWeightLogs(7),
+      getDaysSinceLastMeasurement(),
+      getTopInsight(),
     ])
     setRecovery(rec)
     setNutrition(nut)
@@ -73,7 +71,7 @@ export default function HomeScreen() {
     setDaysSinceMeasurement(daysSince)
     setTopInsight(insight)
 
-    const prs = await getAllPRs(db)
+    const prs = await getAllPRs()
     const now = new Date()
     setPrsThisMonth(
       prs.filter((p) => {
@@ -83,7 +81,7 @@ export default function HomeScreen() {
     )
 
     const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 })
-    const volumeRows = await getWeeklyVolume(db)
+    const volumeRows = await getWeeklyVolume()
     const volumeByDay = new Map(volumeRows.map((v) => [v.day, v.volume]))
     let sessions = 0
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
@@ -107,7 +105,7 @@ export default function HomeScreen() {
 
   async function handleStartWorkout(templateIndex: number) {
     const template = TEMPLATES[templateIndex]
-    const { workoutId, exercises } = await buildWorkoutFromTemplate(db, template)
+    const { workoutId, exercises } = await buildWorkoutFromTemplate(template)
     useWorkoutStore.getState().startWorkout(workoutId, template.name, exercises)
     router.push('/workout/active')
   }

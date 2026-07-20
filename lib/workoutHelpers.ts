@@ -1,19 +1,17 @@
-import type { SQLiteDatabase } from 'expo-sqlite'
 import {
   getExercisesByName,
   addWorkoutExercise,
   createWorkout,
   getPreviousSets,
-} from './db/queries'
+} from './firestore/queries'
 import type { WorkoutTemplate } from './templates'
 import type { ActiveExercise } from './types'
 
 export async function buildWorkoutFromTemplate(
-  db: SQLiteDatabase,
   template: WorkoutTemplate
-): Promise<{ workoutId: number; exercises: ActiveExercise[] }> {
-  const dbExercises = await getExercisesByName(db, template.exercises.map((e) => e.name))
-  const workoutId = await createWorkout(db, template.name)
+): Promise<{ workoutId: string; exercises: ActiveExercise[] }> {
+  const dbExercises = await getExercisesByName(template.exercises.map((e) => e.name))
+  const workoutId = await createWorkout(template.name)
   const exercises: ActiveExercise[] = []
 
   for (let i = 0; i < template.exercises.length; i++) {
@@ -21,8 +19,8 @@ export async function buildWorkoutFromTemplate(
     const ex = dbExercises.find((e) => e.name === tmpl.name)
     if (!ex) continue
 
-    const workoutExerciseId = await addWorkoutExercise(db, workoutId, ex.id, i)
-    const prevSets = await getPreviousSets(db, ex.id)
+    const workoutExerciseId = await addWorkoutExercise(workoutId, ex.id, i, ex.name)
+    const prevSets = await getPreviousSets(ex.id)
     const last = prevSets[0]
 
     exercises.push({

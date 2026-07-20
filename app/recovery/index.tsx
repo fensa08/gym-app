@@ -1,13 +1,12 @@
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native'
 import { useRouter, useFocusEffect } from 'expo-router'
-import { useSQLiteContext } from 'expo-sqlite'
 import { useState, useCallback } from 'react'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { ReadinessRing } from '../../components/Ring'
 import { SorenessGrid } from '../../components/Selectors'
-import { getRecoveryLogs, getLatestRecoveryLog, readinessScore } from '../../lib/db/queriesHealth'
+import { getRecoveryLogs, getLatestRecoveryLog, readinessScore } from '../../lib/firestore/queriesHealth'
 import type { RecoveryLog, MuscleGroupKey } from '../../lib/types'
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
@@ -20,7 +19,6 @@ const EMPTY_SORENESS: Record<MuscleGroupKey, 0 | 1 | 2 | 3> = {
 }
 
 export default function RecoveryHubScreen() {
-  const db = useSQLiteContext()
   const router = useRouter()
   const [latest, setLatest] = useState<RecoveryLog | null>(null)
   const [weekLogs, setWeekLogs] = useState<RecoveryLog[]>([])
@@ -32,7 +30,7 @@ export default function RecoveryHubScreen() {
   )
 
   async function loadData() {
-    const [l, week] = await Promise.all([getLatestRecoveryLog(db), getRecoveryLogs(db, 7)])
+    const [l, week] = await Promise.all([getLatestRecoveryLog(), getRecoveryLogs(7)])
     setLatest(l)
     setWeekLogs(week)
   }

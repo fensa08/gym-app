@@ -21,9 +21,12 @@
       },
       "package": "com.fensa08.gymtracker"
     },
+    "web": {
+      "output": "static",
+      "bundler": "metro"
+    },
     "plugins": [
       "expo-router",
-      "expo-sqlite",
       "expo-font"
     ],
     "experiments": {

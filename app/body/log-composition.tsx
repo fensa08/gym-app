@@ -1,10 +1,9 @@
 import { View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView } from 'react-native'
 import { useRouter } from 'expo-router'
-import { useSQLiteContext } from 'expo-sqlite'
 import { useState, useEffect } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
-import { insertBodyCompositionLog, getUserGoals, getLatestBodyComposition } from '../../lib/db/queriesHealth'
+import { insertBodyCompositionLog, getUserGoals, getLatestBodyComposition } from '../../lib/firestore/queriesHealth'
 import { PhotoPicker } from '../../components/PhotoPicker'
 import { CIRCUMFERENCE_FIELDS } from './index'
 import type { BodyFatMethod, BodyCompositionLog } from '../../lib/types'
@@ -17,7 +16,6 @@ const METHODS: { key: BodyFatMethod; label: string }[] = [
 
 export default function LogCompositionModal() {
   const router = useRouter()
-  const db = useSQLiteContext()
   const insets = useSafeAreaInsets()
 
   const [bodyFatPct, setBodyFatPct] = useState('')
@@ -31,7 +29,7 @@ export default function LogCompositionModal() {
 
   useEffect(() => {
     ;(async () => {
-      const [goals, latest] = await Promise.all([getUserGoals(db), getLatestBodyComposition(db)])
+      const [goals, latest] = await Promise.all([getUserGoals(), getLatestBodyComposition()])
       setHeightCm(String(latest?.height_cm ?? goals.height_cm))
     })()
   }, [])
@@ -41,7 +39,7 @@ export default function LogCompositionModal() {
   }
 
   async function handleSave() {
-    await insertBodyCompositionLog(db, {
+    await insertBodyCompositionLog({
       body_fat_pct: bodyFatPct ? parseFloat(bodyFatPct) : null,
       method,
       neck_cm: method === 'navy' && neckCm ? parseFloat(neckCm) : null,

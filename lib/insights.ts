@@ -1,4 +1,3 @@
-import type { SQLiteDatabase } from 'expo-sqlite'
 import {
   getBodyWeightLogs,
   getBodyCompositionHistory,
@@ -7,7 +6,7 @@ import {
   getStaleExercises,
   getMaintenanceCalibration,
   getUserGoals,
-} from './db/queriesHealth'
+} from './firestore/queriesHealth'
 
 export type SignalColor = 'green' | 'amber' | 'red' | 'blue'
 
@@ -33,9 +32,9 @@ export interface Signal {
   recommendation?: string
 }
 
-export async function getBodyCompositionSignal(db: SQLiteDatabase): Promise<Signal | null> {
-  const weights = await getBodyWeightLogs(db, 30)
-  const comps = await getBodyCompositionHistory(db, 30)
+export async function getBodyCompositionSignal(): Promise<Signal | null> {
+  const weights = await getBodyWeightLogs(30)
+  const comps = await getBodyCompositionHistory(30)
   if (weights.length < 2) return null
   const weightChange = weights[weights.length - 1].weight_kg - weights[0].weight_kg
   const bfComps = comps.filter((c) => c.body_fat_pct != null)
@@ -44,19 +43,12 @@ export async function getBodyCompositionSignal(db: SQLiteDatabase): Promise<Sign
   let color: SignalColor = 'blue'
   let headline = 'Cutting steadily'
   if (weightChange > 0.2) {
-    if (bfChange != null && bfChange > 1) {
-      color = 'amber'
-      headline = 'Gaining fat faster than muscle'
-    } else {
-      color = 'green'
-      headline = 'Gaining muscle cleanly'
-    }
+    if (bfChange != null && bfChange > 1) { color = 'amber'; headline = 'Gaining fat faster than muscle' }
+    else { color = 'green'; headline = 'Gaining muscle cleanly' }
   } else if (weightChange < -0.2) {
-    color = 'blue'
-    headline = 'Cutting steadily'
+    color = 'blue'; headline = 'Cutting steadily'
   } else {
-    color = 'green'
-    headline = 'Weight holding steady'
+    color = 'green'; headline = 'Weight holding steady'
   }
 
   return {
@@ -71,15 +63,14 @@ export async function getBodyCompositionSignal(db: SQLiteDatabase): Promise<Sign
   }
 }
 
-export async function getReadinessSignal(db: SQLiteDatabase): Promise<Signal | null> {
-  const logs = await getRecoveryLogs(db, 7)
+export async function getReadinessSignal(): Promise<Signal | null> {
+  const logs = await getRecoveryLogs(7)
   if (logs.length === 0) return null
   const latest = logs[logs.length - 1]
   const score = readinessScore(latest)
   if (score == null) return null
   const color: SignalColor = score >= 7 ? 'green' : score >= 5 ? 'amber' : 'red'
-  const headline =
-    score >= 7 ? 'Ready to train hard' : score >= 5 ? 'Train, but ease intensity' : 'Recovery flagged — consider deload'
+  const headline = score >= 7 ? 'Ready to train hard' : score >= 5 ? 'Train, but ease intensity' : 'Recovery flagged — consider deload'
   return {
     key: 'readiness',
     title: "Today's Readiness",
@@ -94,18 +85,16 @@ export async function getReadinessSignal(db: SQLiteDatabase): Promise<Signal | n
   }
 }
 
-export async function getBulkQualitySignal(db: SQLiteDatabase): Promise<Signal | null> {
-  const weights = await getBodyWeightLogs(db, 21)
-  const comps = await getBodyCompositionHistory(db, 21)
+export async function getBulkQualitySignal(): Promise<Signal | null> {
+  const weights = await getBodyWeightLogs(21)
+  const comps = await getBodyCompositionHistory(21)
   if (weights.length < 4) return null
-  const first = weights[0]
-  const last = weights[weights.length - 1]
+  const first = weights[0], last = weights[weights.length - 1]
   const days = Math.max(1, (new Date(last.date).getTime() - new Date(first.date).getTime()) / 86400000)
   const gainRate = ((last.weight_kg - first.weight_kg) / days) * 7
   const waistComps = comps.filter((c) => c.waist_cm != null)
   const waistChange = waistComps.length >= 2 ? waistComps[waistComps.length - 1].waist_cm! - waistComps[0].waist_cm! : null
   if (gainRate <= 0) return null
-
   const clean = waistChange == null || waistChange < 1
   return {
     key: 'bulk_quality',
@@ -116,22 +105,19 @@ export async function getBulkQualitySignal(db: SQLiteDatabase): Promise<Signal |
       { label: 'Weight gain rate', value: `${gainRate.toFixed(2)} kg/wk` },
       { label: 'Waist change', value: waistChange != null ? `${waistChange >= 0 ? '+' : ''}${waistChange.toFixed(1)}cm` : '—' },
     ],
-    recommendation: clean
-      ? undefined
-      : 'Trim ~150–200 kcal/day to slow fat gain while preserving muscle gain.',
+    recommendation: clean ? undefined : 'Trim ~150–200 kcal/day to slow fat gain while preserving muscle gain.',
   }
 }
 
-export async function getStalenessSignal(db: SQLiteDatabase) {
-  return getStaleExercises(db)
+export async function getStalenessSignal() {
+  return getStaleExercises()
 }
 
-export async function getCalibrationSignal(db: SQLiteDatabase): Promise<Signal | null> {
-  const calib = await getMaintenanceCalibration(db)
+export async function getCalibrationSignal(): Promise<Signal | null> {
+  const calib = await getMaintenanceCalibration()
   if (!calib) return null
-  const goals = await getUserGoals(db)
-  const dailyKcalPerKgWeek = 1100
-  const estimatedMaintenance = Math.round(calib.avgIntake - calib.weightChangePerWeek * dailyKcalPerKgWeek / 7)
+  const goals = await getUserGoals()
+  const estimatedMaintenance = Math.round(calib.avgIntake - (calib.weightChangePerWeek * 1100) / 7)
   return {
     key: 'calibration',
     title: 'Calorie Calibration',
@@ -139,23 +125,20 @@ export async function getCalibrationSignal(db: SQLiteDatabase): Promise<Signal |
     color: 'blue',
     chips: [
       { label: 'Avg intake', value: `${Math.round(calib.avgIntake)} kcal` },
-      {
-        label: 'Weight trend',
-        value: `${calib.weightChangePerWeek >= 0 ? '+' : ''}${calib.weightChangePerWeek.toFixed(2)} kg/wk`,
-      },
+      { label: 'Weight trend', value: `${calib.weightChangePerWeek >= 0 ? '+' : ''}${calib.weightChangePerWeek.toFixed(2)} kg/wk` },
       { label: 'vs goal', value: `${goals.calorie_goal} kcal` },
     ],
   }
 }
 
-export async function getTopInsight(db: SQLiteDatabase): Promise<{ headline: string; color: SignalColor } | null> {
-  const readiness = await getReadinessSignal(db)
+export async function getTopInsight(): Promise<{ headline: string; color: SignalColor } | null> {
+  const readiness = await getReadinessSignal()
   if (readiness && (readiness.color === 'red' || readiness.color === 'amber')) {
     return { headline: readiness.headline, color: readiness.color }
   }
-  const bulk = await getBulkQualitySignal(db)
+  const bulk = await getBulkQualitySignal()
   if (bulk) return { headline: bulk.headline, color: bulk.color }
-  const body = await getBodyCompositionSignal(db)
+  const body = await getBodyCompositionSignal()
   if (body) return { headline: body.headline, color: body.color }
   if (readiness) return { headline: readiness.headline, color: readiness.color }
   return null

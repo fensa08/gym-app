@@ -1,10 +1,9 @@
 import { View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView } from 'react-native'
 import { useRouter } from 'expo-router'
-import { useSQLiteContext } from 'expo-sqlite'
 import { useState, useEffect } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
-import { upsertRecoveryLog, getLatestRecoveryLog } from '../../lib/db/queriesHealth'
+import { upsertRecoveryLog, getLatestRecoveryLog } from '../../lib/firestore/queriesHealth'
 import { RPESelector, SorenessGrid } from '../../components/Selectors'
 import type { MuscleGroupKey, SorenessLevel } from '../../lib/types'
 
@@ -18,7 +17,6 @@ const EMPTY_SORENESS: Record<MuscleGroupKey, SorenessLevel> = {
 
 export default function LogRecoveryModal() {
   const router = useRouter()
-  const db = useSQLiteContext()
   const insets = useSafeAreaInsets()
 
   const [sleepHours, setSleepHours] = useState(7.5)
@@ -29,7 +27,7 @@ export default function LogRecoveryModal() {
   const [soreness, setSoreness] = useState<Record<MuscleGroupKey, SorenessLevel>>(EMPTY_SORENESS)
 
   useEffect(() => {
-    getLatestRecoveryLog(db).then((log) => {
+    getLatestRecoveryLog().then((log) => {
       if (!log) return
       if (log.sleep_hours != null) setSleepHours(log.sleep_hours)
       if (log.resting_hr != null) setRestingHr(String(log.resting_hr))
@@ -46,7 +44,7 @@ export default function LogRecoveryModal() {
   }
 
   async function handleSave() {
-    await upsertRecoveryLog(db, {
+    await upsertRecoveryLog({
       sleep_hours: sleepHours,
       sleep_quality: sleepQuality,
       stress_level: stressLevel,

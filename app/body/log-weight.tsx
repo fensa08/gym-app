@@ -1,14 +1,12 @@
 import { View, Text, TouchableOpacity, StyleSheet, TextInput } from 'react-native'
 import { useRouter } from 'expo-router'
-import { useSQLiteContext } from 'expo-sqlite'
 import { useState, useEffect } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
-import { upsertBodyWeightLog, getLatestBodyWeight } from '../../lib/db/queriesHealth'
+import { upsertBodyWeightLog, getLatestBodyWeight } from '../../lib/firestore/queriesHealth'
 
 export default function LogWeightModal() {
   const router = useRouter()
-  const db = useSQLiteContext()
   const insets = useSafeAreaInsets()
   const [weight, setWeight] = useState(75)
   const [day, setDay] = useState<'today' | 'yesterday'>('today')
@@ -16,7 +14,7 @@ export default function LogWeightModal() {
   const [notes, setNotes] = useState('')
 
   useEffect(() => {
-    getLatestBodyWeight(db).then((w) => {
+    getLatestBodyWeight().then((w) => {
       if (w) setWeight(w.weight_kg)
     })
   }, [])
@@ -28,7 +26,7 @@ export default function LogWeightModal() {
   async function handleSave() {
     const date = new Date()
     if (day === 'yesterday') date.setDate(date.getDate() - 1)
-    await upsertBodyWeightLog(db, weight, date.toISOString().slice(0, 10), notes.trim() || null)
+    await upsertBodyWeightLog(weight, date.toISOString().slice(0, 10), notes.trim() || null)
     router.back()
   }
 

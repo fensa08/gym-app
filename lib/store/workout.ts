@@ -12,7 +12,7 @@ export interface RestLogEntry {
 
 interface WorkoutStore {
   isActive: boolean
-  workoutId: number | null
+  workoutId: string | null
   workoutName: string
   startedAt: number | null
   exercises: ActiveExercise[]
@@ -24,7 +24,7 @@ interface WorkoutStore {
   overallRpe: number | null
   perExerciseRpe: Record<number, number>
 
-  startWorkout(id: number, name: string, exercises: ActiveExercise[]): void
+  startWorkout(id: string, name: string, exercises: ActiveExercise[]): void
   setView(view: WorkoutView): void
   setCurrentExercise(index: number): void
   addExercise(exercise: ActiveExercise): void
@@ -66,17 +66,9 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
     })
   },
 
-  setView(view) {
-    set({ workoutView: view })
-  },
-
-  setCurrentExercise(index) {
-    set({ currentExerciseIndex: index, workoutView: 'logging' })
-  },
-
-  addExercise(exercise) {
-    set({ exercises: [...get().exercises, exercise] })
-  },
+  setView(view) { set({ workoutView: view }) },
+  setCurrentExercise(index) { set({ currentExerciseIndex: index, workoutView: 'logging' }) },
+  addExercise(exercise) { set({ exercises: [...get().exercises, exercise] }) },
 
   addSet(exerciseIndex, loggedSet) {
     const exercises = [...get().exercises]
@@ -91,29 +83,19 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
     set({ workoutView: 'resting', restDuration: d, restTimerEnd: Date.now() + d * 1000 })
   },
 
-  stopRestTimer() {
-    set({ workoutView: 'logging', restTimerEnd: null })
-  },
-
-  setRestDuration(seconds) {
-    set({ restDuration: seconds, restTimerEnd: Date.now() + seconds * 1000 })
-  },
+  stopRestTimer() { set({ workoutView: 'logging', restTimerEnd: null }) },
+  setRestDuration(seconds) { set({ restDuration: seconds, restTimerEnd: Date.now() + seconds * 1000 }) },
 
   logRest(exerciseIndex, exerciseName, target, actual) {
     set({ restLog: [...get().restLog, { exerciseIndex, exerciseName, target, actual }] })
   },
 
-  setOverallRpe(rpe) {
-    set({ overallRpe: rpe })
-  },
-
+  setOverallRpe(rpe) { set({ overallRpe: rpe }) },
   setExerciseRpe(exerciseIndex, rpe) {
     set({ perExerciseRpe: { ...get().perExerciseRpe, [exerciseIndex]: rpe } })
   },
 
-  finishWorkout() {
-    set({ isActive: false, workoutView: 'summary' })
-  },
+  finishWorkout() { set({ isActive: false, workoutView: 'summary' }) },
 
   reset() {
     set({

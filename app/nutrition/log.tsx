@@ -1,14 +1,12 @@
 import { View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView } from 'react-native'
 import { useRouter } from 'expo-router'
-import { useSQLiteContext } from 'expo-sqlite'
 import { useState, useEffect } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
-import { upsertNutritionLog, getTodayNutritionLog, getUserGoals } from '../../lib/db/queriesHealth'
+import { upsertNutritionLog, getTodayNutritionLog, getUserGoals } from '../../lib/firestore/queriesHealth'
 
 export default function LogNutritionModal() {
   const router = useRouter()
-  const db = useSQLiteContext()
   const insets = useSafeAreaInsets()
 
   const [calories, setCalories] = useState('')
@@ -22,7 +20,7 @@ export default function LogNutritionModal() {
 
   useEffect(() => {
     ;(async () => {
-      const [today, goals] = await Promise.all([getTodayNutritionLog(db), getUserGoals(db)])
+      const [today, goals] = await Promise.all([getTodayNutritionLog(), getUserGoals()])
       setProteinGoal(goals.protein_goal)
       if (today) {
         if (today.calories != null) setCalories(String(today.calories))
@@ -36,7 +34,7 @@ export default function LogNutritionModal() {
   }, [])
 
   async function handleSave() {
-    await upsertNutritionLog(db, {
+    await upsertNutritionLog({
       calories: calories ? parseInt(calories, 10) : null,
       protein_g: protein ? parseFloat(protein) : null,
       water_ml: water ? parseInt(water, 10) : null,

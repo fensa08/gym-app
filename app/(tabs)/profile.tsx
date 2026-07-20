@@ -2,10 +2,9 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-nati
 import { LinearGradient } from 'expo-linear-gradient'
 import { useState, useCallback } from 'react'
 import { useFocusEffect } from 'expo-router'
-import { useSQLiteContext } from 'expo-sqlite'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
-import { getRecentWorkouts, getAllPRs, getWorkoutStreak } from '../../lib/db/queries'
+import { getRecentWorkouts, getAllPRs, getWorkoutStreak } from '../../lib/firestore/queries'
 
 const SETTINGS: { label: string; value: string; badge?: boolean }[] = [
   { label: 'Units', value: 'Kilograms (kg)' },
@@ -17,7 +16,6 @@ const SETTINGS: { label: string; value: string; badge?: boolean }[] = [
 ]
 
 export default function ProfileScreen() {
-  const db = useSQLiteContext()
   const [workoutCount, setWorkoutCount] = useState(0)
   const [prCount, setPrCount] = useState(0)
   const [streak, setStreak] = useState(0)
@@ -30,9 +28,9 @@ export default function ProfileScreen() {
 
   async function loadData() {
     const [ws, prs, s] = await Promise.all([
-      getRecentWorkouts(db, 1000),
-      getAllPRs(db),
-      getWorkoutStreak(db),
+      getRecentWorkouts(1000),
+      getAllPRs(),
+      getWorkoutStreak(),
     ])
     setWorkoutCount(ws.length)
     setPrCount(prs.length)

@@ -1,6 +1,5 @@
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native'
 import { useRouter, useFocusEffect } from 'expo-router'
-import { useSQLiteContext } from 'expo-sqlite'
 import { useState, useCallback } from 'react'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -12,7 +11,7 @@ import {
   getBodyCompositionHistory,
   getLatestBodyComposition,
   getUserGoals,
-} from '../../lib/db/queriesHealth'
+} from '../../lib/firestore/queriesHealth'
 import { computeFFMI } from '../../lib/insights'
 import type { BodyWeightLog, BodyCompositionLog, UserGoals } from '../../lib/types'
 
@@ -26,7 +25,6 @@ export const CIRCUMFERENCE_FIELDS: { key: keyof BodyCompositionLog; label: strin
 ]
 
 export default function BodyHubScreen() {
-  const db = useSQLiteContext()
   const router = useRouter()
   const [weights, setWeights] = useState<BodyWeightLog[]>([])
   const [comps, setComps] = useState<BodyCompositionLog[]>([])
@@ -41,10 +39,10 @@ export default function BodyHubScreen() {
 
   async function loadData() {
     const [w, c, latest, g] = await Promise.all([
-      getBodyWeightLogs(db, 30),
-      getBodyCompositionHistory(db, 60),
-      getLatestBodyComposition(db),
-      getUserGoals(db),
+      getBodyWeightLogs(30),
+      getBodyCompositionHistory(60),
+      getLatestBodyComposition(),
+      getUserGoals(),
     ])
     setWeights(w)
     setComps(c)

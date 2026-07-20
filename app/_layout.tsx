@@ -1,35 +1,55 @@
-import { Stack } from 'expo-router'
-import { SQLiteProvider } from 'expo-sqlite'
+import { Stack, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
-import { View } from 'react-native'
+import { View, ActivityIndicator } from 'react-native'
+import { useEffect } from 'react'
 import { useFonts as useCormorant, CormorantGaramond_400Regular, CormorantGaramond_500Medium } from '@expo-google-fonts/cormorant-garamond'
 import { useFonts as useInter, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter'
 import { useFonts as useJetBrainsMono, JetBrainsMono_400Regular, JetBrainsMono_600SemiBold, JetBrainsMono_700Bold } from '@expo-google-fonts/jetbrains-mono'
-import { initDB } from '../lib/db/schema'
-import { seedExercises } from '../lib/db/seed'
 import { colors } from '../lib/theme'
-import type { SQLiteDatabase } from 'expo-sqlite'
-
-async function onInit(db: SQLiteDatabase) {
-  await initDB(db)
-  await seedExercises(db)
-}
+import { useAuthStore } from '../lib/store/auth'
+import { seedExercises } from '../lib/firestore/seed'
 
 export default function RootLayout() {
   const [cormorantLoaded] = useCormorant({ CormorantGaramond_400Regular, CormorantGaramond_500Medium })
   const [interLoaded] = useInter({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold })
   const [monoLoaded] = useJetBrainsMono({ JetBrainsMono_400Regular, JetBrainsMono_600SemiBold, JetBrainsMono_700Bold })
 
-  const fontsReady = cormorantLoaded && interLoaded && monoLoaded
+  const { user, loading, init } = useAuthStore()
+  const router = useRouter()
+  const segments = useSegments()
 
-  if (!fontsReady) {
-    return <View style={{ flex: 1, backgroundColor: colors.bg }} />
+  useEffect(() => {
+    init()
+  }, [])
+
+  const inAuthGroup = segments[0] === 'login'
+
+  useEffect(() => {
+    if (loading) return
+    if (!user && !inAuthGroup) {
+      router.replace('/login')
+    } else if (user && inAuthGroup) {
+      seedExercises()
+      router.replace('/(tabs)')
+    }
+  }, [user, loading, segments])
+
+  const fontsReady = cormorantLoaded && interLoaded && monoLoaded
+  const needsRedirect = !loading && ((!user && !inAuthGroup) || (user && inAuthGroup))
+
+  if (!fontsReady || loading || needsRedirect) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={colors.accentMid} />
+      </View>
+    )
   }
 
   return (
-    <SQLiteProvider databaseName="gym.db" onInit={onInit}>
+    <>
       <StatusBar style="dark" />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+        <Stack.Screen name="login" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen
           name="workout/active"
@@ -67,6 +87,6 @@ export default function RootLayout() {
           }}
         />
       </Stack>
-    </SQLiteProvider>
+    </>
   )
 }

@@ -1,22 +1,20 @@
 import { View, Text, StyleSheet, ScrollView } from 'react-native'
 import { useState, useCallback } from 'react'
 import { useFocusEffect } from 'expo-router'
-import { useSQLiteContext } from 'expo-sqlite'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { format } from 'date-fns'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
-import { getWorkoutHistoryWithStats } from '../../lib/db/queries'
+import { getWorkoutHistoryWithStats } from '../../lib/firestore/queries'
 
 type Session = Awaited<ReturnType<typeof getWorkoutHistoryWithStats>>[number]
 
 export default function LogScreen() {
-  const db = useSQLiteContext()
   const [sessions, setSessions] = useState<Session[]>([])
 
   useFocusEffect(
     useCallback(() => {
-      getWorkoutHistoryWithStats(db, 40).then(setSessions)
+      getWorkoutHistoryWithStats(40).then(setSessions)
     }, [])
   )
 

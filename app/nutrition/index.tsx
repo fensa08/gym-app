@@ -1,6 +1,5 @@
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native'
 import { useRouter, useFocusEffect } from 'expo-router'
-import { useSQLiteContext } from 'expo-sqlite'
 import { useState, useCallback } from 'react'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -13,13 +12,12 @@ import {
   getNutritionLogs,
   getNutritionStreaks,
   upsertNutritionLog,
-} from '../../lib/db/queriesHealth'
+} from '../../lib/firestore/queriesHealth'
 import type { NutritionLog, UserGoals } from '../../lib/types'
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
 export default function NutritionHubScreen() {
-  const db = useSQLiteContext()
   const router = useRouter()
   const [today, setToday] = useState<NutritionLog | null>(null)
   const [goals, setGoals] = useState<UserGoals | null>(null)
@@ -33,11 +31,11 @@ export default function NutritionHubScreen() {
   )
 
   async function loadData() {
-    const g = await getUserGoals(db)
+    const g = await getUserGoals()
     const [t, week, streak] = await Promise.all([
-      getTodayNutritionLog(db),
-      getNutritionLogs(db, 7),
-      getNutritionStreaks(db, g.calorie_goal),
+      getTodayNutritionLog(),
+      getNutritionLogs(7),
+      getNutritionStreaks(g.calorie_goal),
     ])
     setGoals(g)
     setToday(t)
@@ -48,7 +46,7 @@ export default function NutritionHubScreen() {
   async function toggleMeal(field: 'pre_workout_meal' | 'post_workout_meal') {
     const current = today
     const nextValue = !(current?.[field] === 1)
-    await upsertNutritionLog(db, {
+    await upsertNutritionLog({
       calories: current?.calories ?? null,
       protein_g: current?.protein_g ?? null,
       water_ml: current?.water_ml ?? null,
