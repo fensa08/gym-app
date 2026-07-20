@@ -9,7 +9,10 @@
     "scheme": "gymtracker",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.fensa08.gymtracker"
+      "bundleIdentifier": "com.fensa08.gymtracker",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -25,6 +28,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "84ac3ad6-1b17-41c3-a253-688c3524e5f9"
+      }
     }
   }
 }
