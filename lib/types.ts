@@ -85,6 +85,8 @@ export interface NutritionLog {
   date: string
   calories: number | null
   protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
   water_ml: number | null
   pre_workout_meal: 0 | 1
   post_workout_meal: 0 | 1
@@ -96,6 +98,9 @@ export interface UserGoals {
   id: number
   calorie_goal: number
   protein_goal: number
+  carbs_goal: number
+  fat_goal: number
   water_goal_ml: number
   height_cm: number
+  weight_goal_kg: number | null
 }

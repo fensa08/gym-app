@@ -168,6 +168,8 @@ export function readinessScore(log: Pick<RecoveryLog, 'sleep_hours' | 'hrv' | 'r
 export interface NutritionInput {
   calories?: number | null
   protein_g?: number | null
+  carbs_g?: number | null
+  fat_g?: number | null
   water_ml?: number | null
   pre_workout_meal?: boolean
   post_workout_meal?: boolean
@@ -179,6 +181,8 @@ export async function upsertNutritionLog(input: NutritionInput, date = today()):
     date,
     calories: input.calories ?? null,
     protein_g: input.protein_g ?? null,
+    carbs_g: input.carbs_g ?? null,
+    fat_g: input.fat_g ?? null,
     water_ml: input.water_ml ?? null,
     pre_workout_meal: input.pre_workout_meal ? 1 : 0,
     post_workout_meal: input.post_workout_meal ? 1 : 0,
@@ -222,12 +226,21 @@ export async function getNutritionStreaks(
 }
 
 // ── Goals / settings ─────────────────────────────────────────────
-const GOALS_DEFAULTS: UserGoals = { id: 1, calorie_goal: 2400, protein_goal: 160, water_goal_ml: 3000, height_cm: 178 }
+const GOALS_DEFAULTS: UserGoals = {
+  id: 1,
+  calorie_goal: 2400,
+  protein_goal: 160,
+  carbs_goal: 250,
+  fat_goal: 75,
+  water_goal_ml: 3000,
+  height_cm: 178,
+  weight_goal_kg: null,
+}
 
 export async function getUserGoals(): Promise<UserGoals> {
   const snap = await getDoc(ref('settings', 'goals'))
   if (!snap.exists()) return GOALS_DEFAULTS
-  return { id: 1, ...snap.data() } as UserGoals
+  return { ...GOALS_DEFAULTS, id: 1, ...snap.data() } as UserGoals
 }
 
 export async function updateUserGoals(goals: Partial<Omit<UserGoals, 'id'>>): Promise<void> {
@@ -236,9 +249,41 @@ export async function updateUserGoals(goals: Partial<Omit<UserGoals, 'id'>>): Pr
   await setDoc(ref('settings', 'goals'), {
     calorie_goal: merged.calorie_goal,
     protein_goal: merged.protein_goal,
+    carbs_goal: merged.carbs_goal,
+    fat_goal: merged.fat_goal,
     water_goal_ml: merged.water_goal_ml,
     height_cm: merged.height_cm,
+    weight_goal_kg: merged.weight_goal_kg ?? null,
   })
+}
+
+export async function getNutritionAverages(days = 7): Promise<{
+  avgCalories: number | null
+  avgProtein: number | null
+  avgCarbs: number | null
+  avgFat: number | null
+  daysLogged: number
+}> {
+  const logs = await getNutritionLogs(days)
+  const withCal = logs.filter(l => l.calories != null)
+  if (withCal.length === 0) return { avgCalories: null, avgProtein: null, avgCarbs: null, avgFat: null, daysLogged: 0 }
+  const avg = (arr: (number | null)[]) => {
+    const valid = arr.filter((v): v is number => v != null)
+    return valid.length ? valid.reduce((s, v) => s + v, 0) / valid.length : null
+  }
+  return {
+    avgCalories: avg(withCal.map(l => l.calories)),
+    avgProtein: avg(withCal.map(l => l.protein_g)),
+    avgCarbs: avg(withCal.map(l => l.carbs_g)),
+    avgFat: avg(withCal.map(l => l.fat_g)),
+    daysLogged: withCal.length,
+  }
+}
+
+export async function getPreviousBodyComposition(): Promise<BodyCompositionLog | null> {
+  const snap = await getDocs(query(col('body_composition_logs'), orderBy('date', 'desc'), orderBy('logged_at', 'desc'), limit(2)))
+  if (snap.docs.length < 2) return null
+  return { id: 0, ...snap.docs[1].data() } as BodyCompositionLog
 }
 
 // ── Staleness detection ───────────────────────────────────────────

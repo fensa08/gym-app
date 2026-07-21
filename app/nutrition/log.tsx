@@ -11,20 +11,24 @@ export default function LogNutritionModal() {
 
   const [calories, setCalories] = useState('')
   const [protein, setProtein] = useState('')
+  const [carbs, setCarbs] = useState('')
+  const [fat, setFat] = useState('')
   const [water, setWater] = useState('')
   const [preWorkout, setPreWorkout] = useState(false)
   const [postWorkout, setPostWorkout] = useState(false)
-  const [proteinGoal, setProteinGoal] = useState(160)
+  const [goals, setGoals] = useState({ protein_goal: 160, carbs_goal: 250, fat_goal: 75 })
   const [notesOpen, setNotesOpen] = useState(false)
   const [notes, setNotes] = useState('')
 
   useEffect(() => {
     ;(async () => {
-      const [today, goals] = await Promise.all([getTodayNutritionLog(), getUserGoals()])
-      setProteinGoal(goals.protein_goal)
+      const [today, g] = await Promise.all([getTodayNutritionLog(), getUserGoals()])
+      setGoals({ protein_goal: g.protein_goal, carbs_goal: g.carbs_goal, fat_goal: g.fat_goal })
       if (today) {
         if (today.calories != null) setCalories(String(today.calories))
         if (today.protein_g != null) setProtein(String(today.protein_g))
+        if (today.carbs_g != null) setCarbs(String(today.carbs_g))
+        if (today.fat_g != null) setFat(String(today.fat_g))
         if (today.water_ml != null) setWater(String(today.water_ml))
         setPreWorkout(today.pre_workout_meal === 1)
         setPostWorkout(today.post_workout_meal === 1)
@@ -37,6 +41,8 @@ export default function LogNutritionModal() {
     await upsertNutritionLog({
       calories: calories ? parseInt(calories, 10) : null,
       protein_g: protein ? parseFloat(protein) : null,
+      carbs_g: carbs ? parseFloat(carbs) : null,
+      fat_g: fat ? parseFloat(fat) : null,
       water_ml: water ? parseInt(water, 10) : null,
       pre_workout_meal: preWorkout,
       post_workout_meal: postWorkout,
@@ -64,7 +70,7 @@ export default function LogNutritionModal() {
 
           <View style={styles.labelRow}>
             <Text style={styles.fieldLabel}>Protein (g)</Text>
-            <Text style={styles.goalRef}>Goal: {proteinGoal}g</Text>
+            <Text style={styles.goalRef}>Goal: {goals.protein_goal}g</Text>
           </View>
           <TextInput
             style={styles.input}
@@ -74,6 +80,37 @@ export default function LogNutritionModal() {
             placeholderTextColor={colors.textSecondary}
             keyboardType="decimal-pad"
           />
+
+          <View style={[styles.macroRow, { marginTop: sp.md }]}>
+            <View style={{ flex: 1 }}>
+              <View style={styles.labelRow}>
+                <Text style={styles.fieldLabel}>Carbs (g)</Text>
+                <Text style={styles.goalRef}>{goals.carbs_goal}g</Text>
+              </View>
+              <TextInput
+                style={styles.input}
+                value={carbs}
+                onChangeText={setCarbs}
+                placeholder="0"
+                placeholderTextColor={colors.textSecondary}
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={styles.labelRow}>
+                <Text style={styles.fieldLabel}>Fat (g)</Text>
+                <Text style={styles.goalRef}>{goals.fat_goal}g</Text>
+              </View>
+              <TextInput
+                style={styles.input}
+                value={fat}
+                onChangeText={setFat}
+                placeholder="0"
+                placeholderTextColor={colors.textSecondary}
+                keyboardType="decimal-pad"
+              />
+            </View>
+          </View>
 
           <Text style={[styles.fieldLabel, { marginTop: sp.md }]}>Water (ml)</Text>
           <TextInput
@@ -189,6 +226,7 @@ const styles = StyleSheet.create({
   togglePillOn: { backgroundColor: colors.accentMid },
   toggleKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff' },
   toggleKnobOn: { alignSelf: 'flex-end' },
+  macroRow: { flexDirection: 'row', gap: sp.sm },
   notesLink: { color: colors.accentMid, fontFamily: fonts.sansSemiBold, fontSize: fs.sm, marginTop: sp.md, alignSelf: 'flex-start' },
   notesInput: {
     width: '100%',
