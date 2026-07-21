@@ -9,6 +9,7 @@ import {
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useState, useEffect, useMemo } from 'react'
+import * as Haptics from 'expo-haptics'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import Svg, { Circle } from 'react-native-svg'
@@ -533,6 +534,7 @@ function RestingView({
       setRemaining(r)
       if (r === 0) {
         clearInterval(id)
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
         onFinishRest(restDuration)
       }
     }, 200)
