@@ -19,6 +19,7 @@ import {
 } from '../../lib/firestore/queriesHealth'
 import { getTopInsight, SIGNAL_COLORS, type SignalColor } from '../../lib/insights'
 import { useWorkoutStore } from '../../lib/store/workout'
+import { useAuthStore } from '../../lib/store/auth'
 import { TEMPLATES } from '../../lib/templates'
 import type { Workout, BodyWeightLog, RecoveryLog, NutritionLog, UserGoals } from '../../lib/types'
 
@@ -27,6 +28,8 @@ const WEEK_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 export default function HomeScreen() {
   const router = useRouter()
   const { isActive } = useWorkoutStore()
+  const user = useAuthStore((s) => s.user)
+  const firstName = user?.displayName?.split(' ')[0] ?? 'there'
   const [recentWorkouts, setRecentWorkouts] = useState<Workout[]>([])
   const [streak, setStreak] = useState(0)
   const [prsThisMonth, setPrsThisMonth] = useState(0)
@@ -117,7 +120,7 @@ export default function HomeScreen() {
         <View style={styles.header}>
           <View>
             <Text style={styles.date}>{formatDate()}</Text>
-            <Text style={styles.greeting}>{greeting()}</Text>
+            <Text style={styles.greeting}>{greeting(firstName)}</Text>
           </View>
           <LinearGradient
             colors={[colors.accentLime, colors.accentDark]}
@@ -125,7 +128,7 @@ export default function HomeScreen() {
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            <Text style={styles.avatarLetter}>A</Text>
+            <Text style={styles.avatarLetter}>{firstName[0].toUpperCase()}</Text>
           </LinearGradient>
         </View>
 
@@ -373,9 +376,8 @@ function StatChip({
   )
 }
 
-function greeting() {
+function greeting(name: string) {
   const h = new Date().getHours()
-  const name = 'Alex'
   if (h < 12) return `Good morning, ${name}`
   if (h < 17) return `Good afternoon, ${name}`
   return `Good evening, ${name}`
