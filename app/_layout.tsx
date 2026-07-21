@@ -51,8 +51,23 @@ export default function RootLayout() {
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
         <Stack.Screen name="login" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="workout/[id]" />
+        <Stack.Screen
+          name="workout/start"
+          options={{
+            presentation: 'fullScreenModal',
+            animation: 'slide_from_bottom',
+          }}
+        />
         <Stack.Screen
           name="workout/active"
+          options={{
+            presentation: 'fullScreenModal',
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="workout/create-program"
           options={{
             presentation: 'fullScreenModal',
             animation: 'slide_from_bottom',

@@ -33,6 +33,7 @@ export async function buildWorkoutFromTemplate(
       startReps: last?.reps ?? 8,
       startKg: last?.weight_kg ?? 20,
       loggedSets: [],
+      previousSets: prevSets,
     })
   }
 

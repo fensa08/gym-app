@@ -14,7 +14,8 @@ export default function LoginScreen() {
     try {
       await signIn()
     } catch (e: any) {
-      setError('Sign in failed. Please try again.')
+      console.error('Sign in error:', e?.code, e?.message)
+      setError(e?.message ?? 'Sign in failed. Please try again.')
     } finally {
       setLoading(false)
     }

@@ -19,7 +19,6 @@ import {
 } from '../../lib/firestore/queriesHealth'
 import { getTopInsight, SIGNAL_COLORS, type SignalColor } from '../../lib/insights'
 import { useWorkoutStore } from '../../lib/store/workout'
-import { buildWorkoutFromTemplate } from '../../lib/workoutHelpers'
 import { TEMPLATES } from '../../lib/templates'
 import type { Workout, BodyWeightLog, RecoveryLog, NutritionLog, UserGoals } from '../../lib/types'
 
@@ -103,13 +102,6 @@ export default function HomeScreen() {
     )
   }
 
-  async function handleStartWorkout(templateIndex: number) {
-    const template = TEMPLATES[templateIndex]
-    const { workoutId, exercises } = await buildWorkoutFromTemplate(template)
-    useWorkoutStore.getState().startWorkout(workoutId, template.name, exercises)
-    router.push('/workout/active')
-  }
-
   const suggestedIndex = recentWorkouts.length % TEMPLATES.length
   const suggested = TEMPLATES[suggestedIndex]
   const lastWorkout = recentWorkouts[0]
@@ -175,7 +167,7 @@ export default function HomeScreen() {
             <View style={styles.heroActions}>
               <TouchableOpacity
                 style={styles.heroStartBtn}
-                onPress={() => handleStartWorkout(suggestedIndex)}
+                onPress={() => router.push('/workout/start')}
                 activeOpacity={0.88}
               >
                 <Ionicons name="play" size={16} color={colors.textPrimary} />

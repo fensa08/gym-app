@@ -29,6 +29,7 @@ export interface ActiveExercise {
   startReps: number
   startKg: number
   loggedSets: LoggedSet[]
+  previousSets: { weight_kg: number | null; reps: number | null }[]
 }
 
 export interface BodyWeightLog {

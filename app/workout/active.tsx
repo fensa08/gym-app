@@ -5,7 +5,7 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
-  Alert,
+  Modal,
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useState, useEffect, useMemo } from 'react'
@@ -21,6 +21,7 @@ import {
   deleteWorkout,
   getOrCreateExercise,
   addWorkoutExercise,
+  getPreviousSets,
 } from '../../lib/firestore/queries'
 import { setWorkoutRpe as dbSetWorkoutRpe, setExerciseRpe as dbSetExerciseRpe } from '../../lib/firestore/queries'
 import { RPESelector } from '../../components/Selectors'
@@ -63,6 +64,7 @@ export default function ActiveWorkoutScreen() {
   const [kgInput, setKgInput] = useState(currentExercise?.startKg ?? 20)
   const [customExerciseName, setCustomExerciseName] = useState('')
   const [prLabel, setPrLabel] = useState<string | null>(null)
+  const [showDiscardModal, setShowDiscardModal] = useState(false)
 
   useEffect(() => {
     if (currentExercise) {
@@ -92,9 +94,12 @@ export default function ActiveWorkoutScreen() {
     const name = customExerciseName.trim()
     if (!name) return
     const exercise = await getOrCreateExercise(name)
-    const workoutExerciseId = workoutId
-      ? await addWorkoutExercise(workoutId!, exercise.id, exercises.length, exercise.name)
-      : undefined
+    const [workoutExerciseId, prevSets] = await Promise.all([
+      workoutId
+        ? addWorkoutExercise(workoutId!, exercise.id, exercises.length, exercise.name)
+        : Promise.resolve(undefined),
+      getPreviousSets(exercise.id),
+    ])
     addExercise({
       workoutExerciseId,
       exerciseId: exercise.id,
@@ -102,22 +107,17 @@ export default function ActiveWorkoutScreen() {
       muscleGroup: exercise.muscle_group,
       equipment: exercise.equipment,
       target: 'Custom exercise',
-      startReps: 8,
-      startKg: 20,
+      startReps: prevSets[0]?.reps ?? 8,
+      startKg: prevSets[0]?.weight_kg ?? 20,
       loggedSets: [],
+      previousSets: prevSets,
     })
     setCustomExerciseName('')
     setCurrentExercise(exercises.length)
   }
 
   function handleFinish() {
-    Alert.alert('Finish Workout?', 'Your session will be saved.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Finish',
-        onPress: () => setView('rpe'),
-      },
-    ])
+    setView('rpe')
   }
 
   function handleFinishRest(actualSeconds: number) {
@@ -128,30 +128,30 @@ export default function ActiveWorkoutScreen() {
   }
 
   async function handleConfirmRpe() {
-    if (workoutId) {
-      if (overallRpe != null) await dbSetWorkoutRpe(workoutId!, overallRpe)
-      for (const [indexStr, rpe] of Object.entries(perExerciseRpe)) {
-        const ex = exercises[Number(indexStr)]
-        if (ex?.workoutExerciseId) await dbSetExerciseRpe(workoutId!, ex.workoutExerciseId, rpe)
+    try {
+      if (workoutId) {
+        if (overallRpe != null) await dbSetWorkoutRpe(workoutId!, overallRpe)
+        for (const [indexStr, rpe] of Object.entries(perExerciseRpe)) {
+          const ex = exercises[Number(indexStr)]
+          if (ex?.workoutExerciseId) await dbSetExerciseRpe(workoutId!, ex.workoutExerciseId, rpe)
+        }
+        await dbFinishWorkout(workoutId!)
       }
-      await dbFinishWorkout(workoutId!)
-    }
+    } catch (_) {}
     storeFinish()
   }
 
   function handleDiscard() {
-    Alert.alert('Discard Workout?', 'All progress will be lost.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Discard',
-        style: 'destructive',
-        onPress: async () => {
-          if (workoutId) await deleteWorkout(workoutId!)
-          reset()
-          router.back()
-        },
-      },
-    ])
+    setShowDiscardModal(true)
+  }
+
+  async function confirmDiscard() {
+    setShowDiscardModal(false)
+    try {
+      if (workoutId) await deleteWorkout(workoutId!)
+    } catch (_) {}
+    reset()
+    router.back()
   }
 
   function handleDone() {
@@ -229,6 +229,33 @@ export default function ActiveWorkoutScreen() {
       {workoutView === 'summary' && (
         <SummaryView workoutName={workoutName} exercises={exercises} onDone={handleDone} />
       )}
+
+      <Modal visible={showDiscardModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Close Workout?</Text>
+            <Text style={styles.modalBody}>
+              Are you sure you want to close? Your workout will not be saved.
+            </Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowDiscardModal(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.modalCancelText}>Keep Going</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalDiscardBtn}
+                onPress={confirmDiscard}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.modalDiscardText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   )
 }
@@ -276,9 +303,24 @@ function LoggingView({
         <Text style={styles.exerciseTarget}>{exercise.target}</Text>
       </View>
 
+      {exercise.previousSets.length > 0 && (
+        <View style={styles.prevCard}>
+          <Text style={styles.prevLabel}>LAST SESSION</Text>
+          <View style={styles.prevRow}>
+            {exercise.previousSets.map((s, i) => (
+              <View key={i} style={styles.prevChip}>
+                <Text style={styles.prevChipText}>
+                  {s.reps ?? '—'}×{s.weight_kg != null ? s.weight_kg : '—'}kg
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
       <View style={styles.stepperGroup}>
         <Stepper label="Reps" value={repsInput} onChange={onReps} min={0} step={1} width={60} />
-        <Stepper label="Kg" value={kgInput} onChange={onKg} min={0} step={2.5} width={70} decimal />
+        <Stepper label="Kg" value={kgInput} onChange={onKg} min={0} step={0.5} width={70} decimal editable />
       </View>
 
       {exercise.loggedSets.length > 0 && (
@@ -324,6 +366,7 @@ function Stepper({
   step,
   width,
   decimal,
+  editable,
 }: {
   label: string
   value: number
@@ -332,8 +375,21 @@ function Stepper({
   step: number
   width: number
   decimal?: boolean
+  editable?: boolean
 }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+
   const display = decimal ? (Math.round(value * 10) / 10).toString() : String(value)
+
+  function commitDraft() {
+    const parsed = parseFloat(draft.replace(',', '.'))
+    if (!isNaN(parsed) && parsed >= min) {
+      onChange(Math.round(parsed * 10) / 10)
+    }
+    setEditing(false)
+  }
+
   return (
     <View style={styles.stepperCard}>
       <Text style={styles.stepperLabel}>{label}</Text>
@@ -344,7 +400,35 @@ function Stepper({
         >
           <Text style={styles.stepBtnText}>–</Text>
         </TouchableOpacity>
-        <Text style={[styles.stepperValue, { minWidth: width }]}>{display}</Text>
+
+        {editable && editing ? (
+          <TextInput
+            style={[styles.stepperValue, styles.stepperInput, { minWidth: width }]}
+            value={draft}
+            onChangeText={setDraft}
+            keyboardType="decimal-pad"
+            autoFocus
+            selectTextOnFocus
+            returnKeyType="done"
+            onSubmitEditing={commitDraft}
+            onBlur={commitDraft}
+          />
+        ) : (
+          <TouchableOpacity
+            onPress={() => {
+              if (editable) {
+                setDraft(display)
+                setEditing(true)
+              }
+            }}
+            activeOpacity={editable ? 0.6 : 1}
+          >
+            <Text style={[styles.stepperValue, { minWidth: width }, editable && styles.stepperValueEditable]}>
+              {display}
+            </Text>
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity style={styles.stepBtn} onPress={() => onChange(Math.round((value + step) * 10) / 10)}>
           <Text style={styles.stepBtnText}>+</Text>
         </TouchableOpacity>
@@ -853,6 +937,41 @@ const styles = StyleSheet.create({
     fontSize: 40,
     textAlign: 'center',
   },
+  stepperValueEditable: {
+    borderBottomWidth: 1.5,
+    borderBottomColor: colors.borderMed,
+  },
+  stepperInput: {
+    color: colors.textPrimary,
+    fontFamily: fonts.monoBold,
+    fontSize: 40,
+    textAlign: 'center',
+    padding: 0,
+  },
+  prevCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: r.md,
+    paddingHorizontal: sp.md,
+    paddingVertical: 10,
+    marginBottom: sp.sm,
+  },
+  prevLabel: {
+    color: colors.textMuted,
+    fontFamily: fonts.sansSemiBold,
+    fontSize: 10,
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  prevRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  prevChip: {
+    backgroundColor: colors.surfaceInput,
+    borderRadius: r.full,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  prevChipText: { color: colors.textSecondary, fontFamily: fonts.mono, fontSize: fs.xs },
   chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 14 },
   setChip: {
     backgroundColor: colors.surfaceGreen,
@@ -1040,4 +1159,48 @@ const styles = StyleSheet.create({
   rpeTableRow: { flexDirection: 'row', paddingVertical: 12 },
   rpeTableRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
   rpeTableCell: { flex: 1, color: colors.textPrimary, fontFamily: fonts.sans, fontSize: fs.sm },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: sp.lg,
+  },
+  modalCard: {
+    backgroundColor: colors.surface,
+    borderRadius: r.xl,
+    padding: sp.lg,
+    width: '100%',
+    gap: sp.md,
+  },
+  modalTitle: {
+    color: colors.textPrimary,
+    fontFamily: fonts.sansBold,
+    fontSize: fs.lg,
+    textAlign: 'center',
+  },
+  modalBody: {
+    color: colors.textSecondary,
+    fontFamily: fonts.sans,
+    fontSize: fs.sm,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  modalActions: { flexDirection: 'row', gap: 10, marginTop: sp.sm },
+  modalCancelBtn: {
+    flex: 1,
+    backgroundColor: colors.surfaceInput,
+    borderRadius: r.lg,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  modalCancelText: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.sm },
+  modalDiscardBtn: {
+    flex: 1,
+    backgroundColor: colors.error,
+    borderRadius: r.lg,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  modalDiscardText: { color: '#fff', fontFamily: fonts.sansBold, fontSize: fs.sm },
 })

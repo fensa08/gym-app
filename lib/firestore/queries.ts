@@ -229,6 +229,69 @@ export async function getAllPRs(): Promise<
   return Array.from(best.values()).sort((a, b) => b.completed_at - a.completed_at)
 }
 
+export interface WorkoutDetailSet {
+  set_number: number
+  weight_kg: number | null
+  reps: number | null
+  is_pr: boolean
+  completed: boolean
+}
+
+export interface WorkoutDetailExercise {
+  workoutExerciseId: string
+  exercise_name: string
+  sets: WorkoutDetailSet[]
+}
+
+export interface WorkoutDetail {
+  id: string
+  name: string
+  started_at: number
+  finished_at: number
+  overall_rpe: number | null
+  exercises: WorkoutDetailExercise[]
+  exercise_count: number
+  set_count: number
+  volume: number
+}
+
+export async function getWorkoutDetail(workoutId: string): Promise<WorkoutDetail | null> {
+  const snap = await getDoc(ref('workouts', workoutId))
+  if (!snap.exists()) return null
+  const data = snap.data()
+  const exercises: WorkoutDetailExercise[] = (data.exercises || []).map((ex: any) => ({
+    workoutExerciseId: ex.workoutExerciseId,
+    exercise_name: ex.exercise_name || 'Unknown',
+    sets: (ex.sets || [])
+      .filter((s: any) => s.completed)
+      .map((s: any) => ({
+        set_number: s.set_number,
+        weight_kg: s.weight_kg,
+        reps: s.reps,
+        is_pr: s.is_pr ?? false,
+        completed: s.completed,
+      })),
+  })).filter((ex: WorkoutDetailExercise) => ex.sets.length > 0)
+  let set_count = 0, volume = 0
+  for (const ex of exercises) {
+    for (const s of ex.sets) {
+      set_count++
+      if (s.weight_kg != null && s.reps != null) volume += s.weight_kg * s.reps
+    }
+  }
+  return {
+    id: snap.id,
+    name: data.name,
+    started_at: data.started_at,
+    finished_at: data.finished_at,
+    overall_rpe: data.overall_rpe ?? null,
+    exercises,
+    exercise_count: exercises.length,
+    set_count,
+    volume,
+  }
+}
+
 export async function getWorkoutHistoryWithStats(limitN = 30) {
   const snap = await getDocs(
     query(col('workouts'), where('finished_at', '>', 0), orderBy('finished_at', 'desc'), limit(limitN))
@@ -301,4 +364,29 @@ export async function setExerciseRpe(workoutId: string, workoutExerciseId: strin
     ex.workoutExerciseId === workoutExerciseId ? { ...ex, rpe } : ex
   )
   await updateDoc(docRef, { exercises })
+}
+
+// ── Custom Programs ──────────────────────────────────────────────
+export interface UserProgram {
+  id: string
+  name: string
+  exercises: { name: string; sets: number }[]
+  created_at: number
+}
+
+export async function saveUserProgram(
+  name: string,
+  exercises: { name: string; sets: number }[]
+): Promise<string> {
+  const docRef = await addDoc(col('programs'), { name, exercises, created_at: Date.now() })
+  return docRef.id
+}
+
+export async function getUserPrograms(): Promise<UserProgram[]> {
+  const snap = await getDocs(query(col('programs'), orderBy('created_at', 'desc')))
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as UserProgram))
+}
+
+export async function deleteUserProgram(id: string): Promise<void> {
+  await deleteDoc(ref('programs', id))
 }
