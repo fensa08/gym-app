@@ -1,6 +1,6 @@
 import { View, Text, TouchableOpacity, StyleSheet, TextInput } from 'react-native'
 import { useRouter } from 'expo-router'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { upsertBodyWeightLog, getLatestBodyWeight } from '../../lib/firestore/queriesHealth'
@@ -9,9 +9,12 @@ export default function LogWeightModal() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const [weight, setWeight] = useState(75)
+  const [editing, setEditing] = useState(false)
+  const [inputText, setInputText] = useState('')
   const [day, setDay] = useState<'today' | 'yesterday'>('today')
   const [notesOpen, setNotesOpen] = useState(false)
   const [notes, setNotes] = useState('')
+  const inputRef = useRef<TextInput>(null)
 
   useEffect(() => {
     getLatestBodyWeight().then((w) => {
@@ -21,6 +24,20 @@ export default function LogWeightModal() {
 
   function bump(delta: number) {
     setWeight((w) => Math.round((w + delta) * 10) / 10)
+  }
+
+  function openEdit() {
+    setInputText(weight.toFixed(1))
+    setEditing(true)
+    setTimeout(() => inputRef.current?.focus(), 50)
+  }
+
+  function commitEdit() {
+    const parsed = parseFloat(inputText.replace(',', '.'))
+    if (!isNaN(parsed) && parsed > 20 && parsed < 400) {
+      setWeight(Math.round(parsed * 10) / 10)
+    }
+    setEditing(false)
   }
 
   async function handleSave() {
@@ -36,17 +53,38 @@ export default function LogWeightModal() {
         <View style={styles.handle} />
         <Text style={styles.title}>Log Weight</Text>
 
-        <View style={styles.weightRow}>
-          <Text style={styles.weightValue}>{weight.toFixed(1)}</Text>
+        <TouchableOpacity style={styles.weightRow} onPress={openEdit} activeOpacity={0.75}>
+          {editing ? (
+            <TextInput
+              ref={inputRef}
+              style={styles.weightInput}
+              value={inputText}
+              onChangeText={setInputText}
+              keyboardType="decimal-pad"
+              returnKeyType="done"
+              onBlur={commitEdit}
+              onSubmitEditing={commitEdit}
+              selectTextOnFocus
+            />
+          ) : (
+            <Text style={styles.weightValue}>{weight.toFixed(1)}</Text>
+          )}
           <Text style={styles.unit}>kg</Text>
-        </View>
+        </TouchableOpacity>
+        {!editing && <Text style={styles.tapHint}>Tap to type</Text>}
 
         <View style={styles.stepperRow}>
+          <TouchableOpacity style={styles.stepBtn} onPress={() => bump(-1)} activeOpacity={0.8}>
+            <Text style={styles.stepBtnText}>−1</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.stepBtn} onPress={() => bump(-0.5)} activeOpacity={0.8}>
             <Text style={styles.stepBtnText}>−0.5</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.stepBtn} onPress={() => bump(0.5)} activeOpacity={0.8}>
             <Text style={styles.stepBtnText}>+0.5</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.stepBtn} onPress={() => bump(1)} activeOpacity={0.8}>
+            <Text style={styles.stepBtnText}>+1</Text>
           </TouchableOpacity>
         </View>
 
@@ -99,14 +137,20 @@ const styles = StyleSheet.create({
   },
   handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.borderMed, marginBottom: sp.md },
   title: { color: colors.textPrimary, fontFamily: fonts.serif, fontSize: 24, marginBottom: sp.md },
-  weightRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginBottom: sp.md },
+  weightRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginBottom: 4 },
   weightValue: { color: colors.textPrimary, fontFamily: fonts.monoBold, fontSize: 72 },
+  weightInput: {
+    color: colors.textPrimary, fontFamily: fonts.monoBold, fontSize: 72,
+    borderBottomWidth: 2, borderBottomColor: colors.accentLime,
+    minWidth: 140, textAlign: 'right', paddingBottom: 0,
+  },
+  tapHint: { color: colors.textMuted, fontFamily: fonts.sans, fontSize: fs.xs, marginBottom: sp.md },
   unit: { color: colors.textSecondary, fontFamily: fonts.sansSemiBold, fontSize: fs.lg, marginBottom: 14 },
-  stepperRow: { flexDirection: 'row', gap: sp.md, marginBottom: sp.md },
+  stepperRow: { flexDirection: 'row', gap: sp.sm, marginBottom: sp.md },
   stepBtn: {
     backgroundColor: colors.surfaceInput,
     borderRadius: r.md,
-    paddingHorizontal: 22,
+    paddingHorizontal: 16,
     paddingVertical: 12,
   },
   stepBtnText: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.md },
