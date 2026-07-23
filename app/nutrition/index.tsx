@@ -64,10 +64,6 @@ export default function NutritionHubScreen() {
     const current = today
     const nextValue = !(current?.[field] === 1)
     await upsertNutritionLog({
-      calories: current?.calories ?? null,
-      protein_g: current?.protein_g ?? null,
-      carbs_g: current?.carbs_g ?? null,
-      fat_g: current?.fat_g ?? null,
       water_ml: current?.water_ml ?? null,
       pre_workout_meal: field === 'pre_workout_meal' ? nextValue : current?.pre_workout_meal === 1,
       post_workout_meal: field === 'post_workout_meal' ? nextValue : current?.post_workout_meal === 1,
@@ -129,6 +125,11 @@ export default function NutritionHubScreen() {
         </TouchableOpacity>
       </View>
 
+      <TouchableOpacity style={styles.foodsLink} onPress={() => router.push('/nutrition/foods')}>
+        <Text style={styles.foodsLinkText}>Manage Food Library</Text>
+        <Ionicons name="chevron-forward" size={14} color={colors.accentMid} />
+      </TouchableOpacity>
+
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* ── Macro rings ── */}
         <View style={styles.ringsCard}>
@@ -167,6 +168,29 @@ export default function NutritionHubScreen() {
             </View>
           )}
         </View>
+
+        {/* ── Today's meals ── */}
+        {today && today.meals && today.meals.length > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Today's Meals</Text>
+            {today.meals.map((meal) => {
+              const totalCal = meal.items.reduce((s, it) => s + it.calories, 0)
+              return (
+                <View key={meal.id} style={styles.mealRow}>
+                  <View style={styles.mealHeaderRow}>
+                    <Text style={styles.mealName}>{meal.name}</Text>
+                    <Text style={styles.mealTotal}>{totalCal} kcal</Text>
+                  </View>
+                  {meal.items.map((item) => (
+                    <Text key={item.id} style={styles.mealItemText}>
+                      {item.food_name} · {item.grams}g · {item.calories} kcal
+                    </Text>
+                  ))}
+                </View>
+              )
+            })}
+          </View>
+        )}
 
         {/* ── 7-day averages ── */}
         {averages && averages.daysLogged > 0 && (
@@ -301,7 +325,17 @@ const styles = StyleSheet.create({
   headerTitle: { color: colors.textPrimary, fontFamily: fonts.serif, fontSize: 22 },
   headerBtn: { backgroundColor: colors.accentLime, borderRadius: r.full, paddingHorizontal: 14, paddingVertical: 8 },
   headerBtnText: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.xs },
+  foodsLink: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    paddingBottom: sp.sm,
+  },
+  foodsLinkText: { color: colors.accentMid, fontFamily: fonts.sansSemiBold, fontSize: fs.xs },
   content: { padding: sp.md, paddingTop: 0, paddingBottom: 120 },
+  mealRow: { marginBottom: sp.sm, paddingBottom: sp.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
+  mealHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  mealName: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.xs },
+  mealTotal: { color: colors.textSecondary, fontFamily: fonts.mono, fontSize: fs.xs },
+  mealItemText: { color: colors.textMuted, fontFamily: fonts.mono, fontSize: 10, marginTop: 2 },
   ringsCard: {
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     borderRadius: r.lg, padding: sp.md, flexDirection: 'row',

@@ -1,11 +1,11 @@
 import {
-  collection, doc, getDoc, getDocs, setDoc,
+  collection, doc, getDoc, getDocs, setDoc, deleteDoc,
   query, orderBy, limit, where,
 } from 'firebase/firestore'
 import { db, auth } from '../firebase'
 import type {
   BodyWeightLog, BodyCompositionLog, BodyFatMethod,
-  RecoveryLog, NutritionLog, UserGoals,
+  RecoveryLog, NutritionLog, UserGoals, Food, Meal, MealItem,
 } from '../types'
 
 function uid(): string {
@@ -164,29 +164,127 @@ export function readinessScore(log: Pick<RecoveryLog, 'sleep_hours' | 'hrv' | 'r
   return Math.round((parts.reduce((s, v) => s + v, 0) / parts.length) * 10) / 10
 }
 
+// ── Foods (per-100g nutrient library) ──────────────────────────────
+export interface FoodInput {
+  name: string
+  calories_per_100g: number
+  protein_per_100g: number
+  carbs_per_100g: number
+  fat_per_100g: number
+}
+
+export async function getFoods(): Promise<Food[]> {
+  const snap = await getDocs(query(col('foods'), orderBy('name')))
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as Food))
+}
+
+export async function createFood(input: FoodInput): Promise<Food> {
+  const docRef = doc(col('foods'))
+  const food = { ...input, created_at: Date.now() }
+  await setDoc(docRef, food)
+  return { id: docRef.id, ...food }
+}
+
+export async function updateFood(id: string, input: FoodInput): Promise<void> {
+  await setDoc(ref('foods', id), input, { merge: true })
+}
+
+export async function deleteFood(id: string): Promise<void> {
+  await deleteDoc(ref('foods', id))
+}
+
 // ── Nutrition ─────────────────────────────────────────────────────
 export interface NutritionInput {
-  calories?: number | null
-  protein_g?: number | null
-  carbs_g?: number | null
-  fat_g?: number | null
   water_ml?: number | null
   pre_workout_meal?: boolean
   post_workout_meal?: boolean
   notes?: string | null
 }
 
+function mealTotals(meals: Meal[]): { calories: number; protein_g: number; carbs_g: number; fat_g: number } {
+  let calories = 0, protein_g = 0, carbs_g = 0, fat_g = 0
+  for (const meal of meals) {
+    for (const item of meal.items) {
+      calories += item.calories
+      protein_g += item.protein_g
+      carbs_g += item.carbs_g
+      fat_g += item.fat_g
+    }
+  }
+  return { calories, protein_g, carbs_g, fat_g }
+}
+
 export async function upsertNutritionLog(input: NutritionInput, date = today()): Promise<void> {
+  const snap = await getDoc(ref('nutrition_logs', date))
+  const existing = snap.exists() ? (snap.data() as Partial<NutritionLog>) : {}
+  const meals = existing.meals ?? []
   await setDoc(ref('nutrition_logs', date), {
+    ...existing,
     date,
-    calories: input.calories ?? null,
-    protein_g: input.protein_g ?? null,
-    carbs_g: input.carbs_g ?? null,
-    fat_g: input.fat_g ?? null,
-    water_ml: input.water_ml ?? null,
-    pre_workout_meal: input.pre_workout_meal ? 1 : 0,
-    post_workout_meal: input.post_workout_meal ? 1 : 0,
-    notes: input.notes ?? null,
+    meals,
+    ...mealTotals(meals),
+    water_ml: input.water_ml !== undefined ? input.water_ml : existing.water_ml ?? null,
+    pre_workout_meal: input.pre_workout_meal !== undefined ? (input.pre_workout_meal ? 1 : 0) : existing.pre_workout_meal ?? 0,
+    post_workout_meal: input.post_workout_meal !== undefined ? (input.post_workout_meal ? 1 : 0) : existing.post_workout_meal ?? 0,
+    notes: input.notes !== undefined ? (input.notes ?? null) : existing.notes ?? null,
+    logged_at: Date.now(),
+  })
+}
+
+export async function addFoodToMeal(
+  mealName: string,
+  food: Food,
+  grams: number,
+  date = today()
+): Promise<void> {
+  const snap = await getDoc(ref('nutrition_logs', date))
+  const existing = snap.exists() ? (snap.data() as Partial<NutritionLog>) : {}
+  const meals: Meal[] = existing.meals ?? []
+
+  const item: MealItem = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    food_id: food.id,
+    food_name: food.name,
+    grams,
+    calories: Math.round((food.calories_per_100g * grams) / 100),
+    protein_g: Math.round(((food.protein_per_100g * grams) / 100) * 10) / 10,
+    carbs_g: Math.round(((food.carbs_per_100g * grams) / 100) * 10) / 10,
+    fat_g: Math.round(((food.fat_per_100g * grams) / 100) * 10) / 10,
+  }
+
+  const normalizedName = mealName.trim() || 'Meal'
+  const targetMeal = meals.find(m => m.name.toLowerCase() === normalizedName.toLowerCase())
+  const nextMeals = targetMeal
+    ? meals.map(m => (m === targetMeal ? { ...m, items: [...m.items, item] } : m))
+    : [...meals, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: normalizedName, items: [item], logged_at: Date.now() }]
+
+  await setDoc(ref('nutrition_logs', date), {
+    ...existing,
+    date,
+    meals: nextMeals,
+    ...mealTotals(nextMeals),
+    water_ml: existing.water_ml ?? null,
+    pre_workout_meal: existing.pre_workout_meal ?? 0,
+    post_workout_meal: existing.post_workout_meal ?? 0,
+    notes: existing.notes ?? null,
+    logged_at: Date.now(),
+  })
+}
+
+export async function removeMealItem(date: string, mealId: string, itemId: string): Promise<void> {
+  const snap = await getDoc(ref('nutrition_logs', date))
+  if (!snap.exists()) return
+  const existing = snap.data() as Partial<NutritionLog>
+  const meals: Meal[] = existing.meals ?? []
+  const nextMeals = meals
+    .map(m => (m.id === mealId ? { ...m, items: m.items.filter(it => it.id !== itemId) } : m))
+    .filter(m => m.items.length > 0)
+
+  await setDoc(ref('nutrition_logs', date), {
+    ...existing,
+    date,
+    meals: nextMeals,
+    ...mealTotals(nextMeals),
     logged_at: Date.now(),
   })
 }
@@ -194,7 +292,7 @@ export async function upsertNutritionLog(input: NutritionInput, date = today()):
 export async function getTodayNutritionLog(): Promise<NutritionLog | null> {
   const snap = await getDoc(ref('nutrition_logs', today()))
   if (!snap.exists()) return null
-  return { id: 0, ...snap.data() } as NutritionLog
+  return { id: 0, meals: [], ...snap.data() } as unknown as NutritionLog
 }
 
 export async function getNutritionLogs(days = 7): Promise<NutritionLog[]> {
@@ -203,7 +301,7 @@ export async function getNutritionLogs(days = 7): Promise<NutritionLog[]> {
   const snap = await getDocs(
     query(col('nutrition_logs'), where('date', '>=', since.toISOString().slice(0, 10)), orderBy('date'))
   )
-  return snap.docs.map((d, i) => ({ id: i, ...d.data() } as NutritionLog))
+  return snap.docs.map((d, i) => ({ id: i, meals: [], ...d.data() } as unknown as NutritionLog))
 }
 
 export async function getNutritionStreaks(

@@ -80,9 +80,38 @@ export interface RecoveryLog {
   logged_at: number
 }
 
+export interface Food {
+  id: string
+  name: string
+  calories_per_100g: number
+  protein_per_100g: number
+  carbs_per_100g: number
+  fat_per_100g: number
+  created_at: number
+}
+
+export interface MealItem {
+  id: string
+  food_id: string
+  food_name: string
+  grams: number
+  calories: number
+  protein_g: number
+  carbs_g: number
+  fat_g: number
+}
+
+export interface Meal {
+  id: string
+  name: string
+  items: MealItem[]
+  logged_at: number
+}
+
 export interface NutritionLog {
   id: number
   date: string
+  meals: Meal[]
   calories: number | null
   protein_g: number | null
   carbs_g: number | null
