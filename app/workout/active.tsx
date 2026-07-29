@@ -322,39 +322,43 @@ function LoggingView({
         <Text style={styles.exerciseTarget}>{exercise.target}</Text>
       </View>
 
-      {exercise.previousSets.length > 0 && (
-        <View style={styles.prevCard}>
-          <Text style={styles.prevLabel}>LAST SESSION</Text>
-          <View style={styles.prevRow}>
-            {exercise.previousSets.map((s, i) => (
-              <View key={i} style={styles.prevChip}>
-                <Text style={styles.prevChipText}>
-                  {s.reps ?? '—'}×{s.weight_kg != null ? s.weight_kg : '—'}kg
+      <ScrollView
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: sp.md }}
+      >
+        {exercise.previousSets.length > 0 && (
+          <View style={styles.prevCard}>
+            <Text style={styles.prevLabel}>LAST SESSION</Text>
+            <View style={styles.prevRow}>
+              {exercise.previousSets.map((s, i) => (
+                <View key={i} style={styles.prevChip}>
+                  <Text style={styles.prevChipText}>
+                    {s.reps ?? '—'}×{s.weight_kg != null ? s.weight_kg : '—'}kg
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        <View style={styles.stepperGroup}>
+          <Stepper label="Reps" value={repsInput} onChange={onReps} min={0} step={1} width={60} />
+          <Stepper label="Kg" value={kgInput} onChange={onKg} min={0} step={0.5} width={70} decimal editable />
+        </View>
+
+        {exercise.loggedSets.length > 0 && (
+          <View style={[styles.chipsWrap, styles.loggedChips]}>
+            {exercise.loggedSets.map((set, i) => (
+              <View key={i} style={styles.setChip}>
+                <Text style={styles.setChipText}>
+                  Set {i + 1}: {set.reps}×{set.kg}kg
                 </Text>
               </View>
             ))}
           </View>
-        </View>
-      )}
-
-      <View style={styles.stepperGroup}>
-        <Stepper label="Reps" value={repsInput} onChange={onReps} min={0} step={1} width={60} />
-        <Stepper label="Kg" value={kgInput} onChange={onKg} min={0} step={0.5} width={70} decimal editable />
-      </View>
-
-      {exercise.loggedSets.length > 0 && (
-        <View style={styles.chipsWrap}>
-          {exercise.loggedSets.map((set, i) => (
-            <View key={i} style={styles.setChip}>
-              <Text style={styles.setChipText}>
-                Set {i + 1}: {set.reps}×{set.kg}kg
-              </Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      <View style={{ flex: 1 }} />
+        )}
+      </ScrollView>
 
       <View style={styles.actionsCol}>
         <TouchableOpacity style={styles.primaryBtn} onPress={onSave} activeOpacity={0.88}>
@@ -918,7 +922,7 @@ const styles = StyleSheet.create({
   exerciseHead: { alignItems: 'center', marginVertical: 18 },
   exerciseName: { color: colors.textPrimary, fontFamily: fonts.serif, fontSize: 28, textAlign: 'center' },
   exerciseTarget: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.sm, marginTop: 4 },
-  stepperGroup: { gap: 14, flex: 1, justifyContent: 'center' },
+  stepperGroup: { gap: 14, marginTop: sp.sm },
   stepperCard: {
     backgroundColor: colors.surface,
     borderRadius: r.xl,
@@ -975,7 +979,7 @@ const styles = StyleSheet.create({
     borderRadius: r.md,
     paddingHorizontal: sp.md,
     paddingVertical: 10,
-    marginBottom: sp.sm,
+    marginBottom: sp.md,
   },
   prevLabel: {
     color: colors.textMuted,
@@ -993,6 +997,7 @@ const styles = StyleSheet.create({
   },
   prevChipText: { color: colors.textSecondary, fontFamily: fonts.mono, fontSize: fs.xs },
   chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 14 },
+  loggedChips: { marginTop: sp.md, marginBottom: sp.sm },
   setChip: {
     backgroundColor: colors.surfaceGreen,
     borderWidth: 1,
