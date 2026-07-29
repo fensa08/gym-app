@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { saveUserProgram } from '../../lib/firestore/queries'
+import { errorMessage } from '../../lib/errors'
 
 interface ExerciseRow {
   name: string
@@ -58,9 +59,10 @@ export default function CreateProgramScreen() {
     try {
       await saveUserProgram(name, validExercises)
       router.back()
-    } catch (_) {
+    } catch (err) {
+      console.error('Failed to save program:', err)
       setSaving(false)
-      Alert.alert('Error', 'Could not save program. Try again.')
+      Alert.alert('Could not save program', errorMessage(err))
     }
   }
 

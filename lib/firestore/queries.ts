@@ -14,6 +14,13 @@ function uid(): string {
 const col = (name: string) => collection(db, 'users', uid(), name)
 const ref = (name: string, id: string) => doc(db, 'users', uid(), name, id)
 
+// Firestore doc IDs can't contain "/", can't be "." or "..", and can't be empty.
+// Exercise names are free text (typed by the user), so sanitize before using one as an ID.
+function sanitizeDocId(name: string): string {
+  const cleaned = name.trim().replace(/\//g, '-').slice(0, 300)
+  return cleaned.length > 0 && !/^\.+$/.test(cleaned) ? cleaned : `exercise-${Date.now()}`
+}
+
 // ── Exercises ────────────────────────────────────────────────────
 export async function getAllExercises(): Promise<Exercise[]> {
   const snap = await getDocs(query(col('exercises'), orderBy('muscle_group'), orderBy('name')))
@@ -30,7 +37,7 @@ export async function searchExercises(q: string): Promise<Exercise[]> {
 
 export async function getExercisesByName(names: string[]): Promise<Exercise[]> {
   if (names.length === 0) return []
-  const snaps = await Promise.all(names.map(n => getDoc(ref('exercises', n))))
+  const snaps = await Promise.all(names.map(n => getDoc(ref('exercises', sanitizeDocId(n)))))
   return snaps.filter(d => d.exists()).map(d => ({ id: d.id, ...d.data() } as Exercise))
 }
 
@@ -39,12 +46,12 @@ export async function getOrCreateExercise(
   muscleGroup = 'Custom',
   equipment = 'Custom'
 ): Promise<Exercise> {
-  const docRef = ref('exercises', name)
+  const docRef = ref('exercises', sanitizeDocId(name))
   const snap = await getDoc(docRef)
   if (snap.exists()) return { id: snap.id, ...snap.data() } as Exercise
   const data = { name, muscle_group: muscleGroup, equipment }
   await setDoc(docRef, data)
-  return { id: name, ...data }
+  return { id: docRef.id, ...data }
 }
 
 // ── Workouts ─────────────────────────────────────────────────────

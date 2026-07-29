@@ -6,6 +6,7 @@ import {
   ScrollView,
   TextInput,
   ActivityIndicator,
+  Alert,
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useState, useEffect } from 'react'
@@ -13,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { TEMPLATES } from '../../lib/templates'
+import { errorMessage } from '../../lib/errors'
 import { buildWorkoutFromTemplate } from '../../lib/workoutHelpers'
 import {
   createWorkout,
@@ -136,6 +138,9 @@ export default function StartWorkoutScreen() {
       const { workoutId, exercises } = await buildWorkoutFromTemplate(template)
       useWorkoutStore.getState().startWorkout(workoutId, template.name, exercises)
       router.replace('/workout/active')
+    } catch (err) {
+      console.error('Failed to start template workout:', err)
+      Alert.alert('Could not start workout', errorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -167,6 +172,9 @@ export default function StartWorkoutScreen() {
       }
       useWorkoutStore.getState().startWorkout(workoutId, program.name, exercises)
       router.replace('/workout/active')
+    } catch (err) {
+      console.error('Failed to start user program:', err)
+      Alert.alert('Could not start workout', errorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -201,6 +209,9 @@ export default function StartWorkoutScreen() {
       }
       useWorkoutStore.getState().startWorkout(workoutId, name, exercises)
       router.replace('/workout/active')
+    } catch (err) {
+      console.error('Failed to start custom workout:', err)
+      Alert.alert('Could not start workout', errorMessage(err))
     } finally {
       setLoading(false)
     }

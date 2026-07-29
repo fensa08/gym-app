@@ -6,6 +6,7 @@ import {
   TextInput,
   ScrollView,
   Modal,
+  Alert,
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useState, useEffect, useMemo } from 'react'
@@ -26,6 +27,7 @@ import {
 } from '../../lib/firestore/queries'
 import { setWorkoutRpe as dbSetWorkoutRpe, setExerciseRpe as dbSetExerciseRpe } from '../../lib/firestore/queries'
 import { RPESelector } from '../../components/Selectors'
+import { errorMessage } from '../../lib/errors'
 
 const REST_PRESETS = [60, 90, 120]
 const RING_R = 98
@@ -79,14 +81,20 @@ export default function ActiveWorkoutScreen() {
     if (!currentExercise) return
     const setNumber = currentExercise.loggedSets.length + 1
     let isPR = false
-    if (currentExercise.workoutExerciseId) {
-      const pr = await getPersonalRecord(currentExercise.exerciseId)
-      if (!pr || kgInput > pr.weight_kg) {
-        isPR = true
-        setPrLabel(currentExercise.name)
-        setTimeout(() => setPrLabel(null), 2200)
+    try {
+      if (currentExercise.workoutExerciseId) {
+        const pr = await getPersonalRecord(currentExercise.exerciseId)
+        if (!pr || kgInput > pr.weight_kg) {
+          isPR = true
+          setPrLabel(currentExercise.name)
+          setTimeout(() => setPrLabel(null), 2200)
+        }
+        await saveSet(workoutId!, currentExercise.workoutExerciseId!, setNumber, kgInput, repsInput, isPR)
       }
-      await saveSet(workoutId!, currentExercise.workoutExerciseId!, setNumber, kgInput, repsInput, isPR)
+    } catch (err) {
+      console.error('Failed to save set:', err)
+      Alert.alert('Could not save set', errorMessage(err))
+      return
     }
     addSet(currentExerciseIndex, { reps: repsInput, kg: kgInput })
   }
@@ -94,13 +102,20 @@ export default function ActiveWorkoutScreen() {
   async function handleAddCustomExercise() {
     const name = customExerciseName.trim()
     if (!name) return
-    const exercise = await getOrCreateExercise(name)
-    const [workoutExerciseId, prevSets] = await Promise.all([
-      workoutId
-        ? addWorkoutExercise(workoutId!, exercise.id, exercises.length, exercise.name)
-        : Promise.resolve(undefined),
-      getPreviousSets(exercise.id),
-    ])
+    let exercise, workoutExerciseId, prevSets
+    try {
+      exercise = await getOrCreateExercise(name)
+      ;[workoutExerciseId, prevSets] = await Promise.all([
+        workoutId
+          ? addWorkoutExercise(workoutId!, exercise.id, exercises.length, exercise.name)
+          : Promise.resolve(undefined),
+        getPreviousSets(exercise.id),
+      ])
+    } catch (err) {
+      console.error('Failed to add exercise:', err)
+      Alert.alert('Could not add exercise', errorMessage(err))
+      return
+    }
     addExercise({
       workoutExerciseId,
       exerciseId: exercise.id,
@@ -138,7 +153,10 @@ export default function ActiveWorkoutScreen() {
         }
         await dbFinishWorkout(workoutId!)
       }
-    } catch (_) {}
+    } catch (err) {
+      console.error('Failed to save workout:', err)
+      Alert.alert('Could not save workout', errorMessage(err))
+    }
     storeFinish()
   }
 
