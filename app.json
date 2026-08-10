@@ -27,7 +27,14 @@
     },
     "plugins": [
       "expo-router",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Gym Tracker to use the camera to scan food barcodes."
+        }
+      ],
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true

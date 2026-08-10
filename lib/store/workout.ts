@@ -23,8 +23,12 @@ interface WorkoutStore {
   restLog: RestLogEntry[]
   overallRpe: number | null
   perExerciseRpe: Record<number, number>
+  activeSuperset: number | null
+  supersetCount: number
 
   startWorkout(id: string, name: string, exercises: ActiveExercise[]): void
+  startSuperset(): void
+  endSuperset(): void
   setView(view: WorkoutView): void
   setCurrentExercise(index: number): void
   addExercise(exercise: ActiveExercise): void
@@ -52,6 +56,8 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
   restLog: [],
   overallRpe: null,
   perExerciseRpe: {},
+  activeSuperset: null,
+  supersetCount: 0,
 
   startWorkout(id, name, exercises) {
     set({
@@ -63,8 +69,17 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
       currentExerciseIndex: 0,
       workoutView: 'logging',
       restTimerEnd: null,
+      activeSuperset: null,
+      supersetCount: 0,
     })
   },
+
+  startSuperset() {
+    const n = get().supersetCount + 1
+    set({ activeSuperset: n, supersetCount: n })
+  },
+
+  endSuperset() { set({ activeSuperset: null }) },
 
   setView(view) { set({ workoutView: view }) },
   setCurrentExercise(index) { set({ currentExerciseIndex: index, workoutView: 'logging' }) },
@@ -110,6 +125,8 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
       restLog: [],
       overallRpe: null,
       perExerciseRpe: {},
+      activeSuperset: null,
+      supersetCount: 0,
     })
   },
 }))

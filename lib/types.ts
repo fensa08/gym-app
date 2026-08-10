@@ -17,6 +17,8 @@ export interface Workout {
 export interface LoggedSet {
   reps: number
   kg: number
+  // Superset group number within the workout; sets sharing a number were done back-to-back
+  superset?: number | null
 }
 
 export interface ActiveExercise {

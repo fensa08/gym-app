@@ -48,9 +48,12 @@ export default function ActiveWorkoutScreen() {
     restLog,
     overallRpe,
     perExerciseRpe,
+    activeSuperset,
     setCurrentExercise,
     addExercise,
     addSet,
+    startSuperset,
+    endSuperset,
     startRestTimer,
     stopRestTimer,
     setRestDuration,
@@ -89,14 +92,14 @@ export default function ActiveWorkoutScreen() {
           setPrLabel(currentExercise.name)
           setTimeout(() => setPrLabel(null), 2200)
         }
-        await saveSet(workoutId!, currentExercise.workoutExerciseId!, setNumber, kgInput, repsInput, isPR)
+        await saveSet(workoutId!, currentExercise.workoutExerciseId!, setNumber, kgInput, repsInput, isPR, activeSuperset)
       }
     } catch (err) {
       console.error('Failed to save set:', err)
       Alert.alert('Could not save set', errorMessage(err))
       return
     }
-    addSet(currentExerciseIndex, { reps: repsInput, kg: kgInput })
+    addSet(currentExerciseIndex, { reps: repsInput, kg: kgInput, superset: activeSuperset })
   }
 
   async function handleAddCustomExercise() {
@@ -207,6 +210,8 @@ export default function ActiveWorkoutScreen() {
           onOpenPicker={() => setView('picker')}
           onStartRest={() => startRestTimer(restDuration)}
           onFinish={handleFinish}
+          activeSuperset={activeSuperset}
+          onToggleSuperset={() => (activeSuperset != null ? endSuperset() : startSuperset())}
         />
       )}
 
@@ -293,6 +298,8 @@ function LoggingView({
   onOpenPicker,
   onStartRest,
   onFinish,
+  activeSuperset,
+  onToggleSuperset,
 }: {
   exercise: NonNullable<ReturnType<typeof useWorkoutStore.getState>['exercises']>[number]
   index: number
@@ -306,6 +313,8 @@ function LoggingView({
   onOpenPicker(): void
   onStartRest(): void
   onFinish(): void
+  activeSuperset: number | null
+  onToggleSuperset(): void
 }) {
   return (
     <View style={styles.screen}>
@@ -350,15 +359,25 @@ function LoggingView({
         {exercise.loggedSets.length > 0 && (
           <View style={[styles.chipsWrap, styles.loggedChips]}>
             {exercise.loggedSets.map((set, i) => (
-              <View key={i} style={styles.setChip}>
+              <View key={i} style={[styles.setChip, set.superset != null && styles.setChipSuperset]}>
                 <Text style={styles.setChipText}>
                   Set {i + 1}: {set.reps}×{set.kg}kg
+                  {set.superset != null ? ` · SS${set.superset}` : ''}
                 </Text>
               </View>
             ))}
           </View>
         )}
       </ScrollView>
+
+      {activeSuperset != null && (
+        <View style={styles.supersetBanner}>
+          <Ionicons name="flash" size={13} color={colors.accentDark} />
+          <Text style={styles.supersetBannerText}>
+            Superset {activeSuperset} active — new sets are grouped until you finish it
+          </Text>
+        </View>
+      )}
 
       <View style={styles.actionsCol}>
         <TouchableOpacity style={styles.primaryBtn} onPress={onSave} activeOpacity={0.88}>
@@ -368,6 +387,16 @@ function LoggingView({
           <TouchableOpacity style={styles.ghostBtn} onPress={onStartRest} activeOpacity={0.85}>
             <Ionicons name="time-outline" size={15} color={colors.accentDark} />
             <Text style={styles.ghostBtnText}>Rest</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.ghostBtn, activeSuperset != null && styles.supersetBtnActive]}
+            onPress={onToggleSuperset}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="flash-outline" size={15} color={colors.accentDark} />
+            <Text style={styles.ghostBtnText} numberOfLines={1} adjustsFontSizeToFit>
+              {activeSuperset != null ? 'Finish Superset' : 'Superset'}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.darkBtn} onPress={onOpenPicker} activeOpacity={0.85}>
             <Text style={styles.darkBtnText}>New Exercise</Text>
@@ -848,9 +877,10 @@ function SummaryView({
             <Text style={styles.summaryExName}>{ex.name}</Text>
             <View style={styles.chipsWrap}>
               {ex.loggedSets.map((set, si) => (
-                <View key={si} style={styles.setChip}>
+                <View key={si} style={[styles.setChip, set.superset != null && styles.setChipSuperset]}>
                   <Text style={styles.setChipText}>
                     {set.reps}×{set.kg}kg
+                    {set.superset != null ? ` · SS${set.superset}` : ''}
                   </Text>
                 </View>
               ))}
@@ -1007,6 +1037,22 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   setChipText: { color: colors.accentDark, fontFamily: fonts.mono, fontSize: fs.xs },
+  setChipSuperset: { borderColor: colors.accentDark, borderStyle: 'dashed' },
+  supersetBtnActive: { backgroundColor: colors.surfaceGreen, borderColor: colors.accentDark },
+  supersetBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.surfaceGreen,
+    borderWidth: 1,
+    borderColor: colors.borderMed,
+    borderRadius: r.md,
+    paddingHorizontal: sp.md,
+    paddingVertical: 8,
+    marginBottom: 10,
+  },
+  supersetBannerText: { color: colors.accentDark, fontFamily: fonts.sansSemiBold, fontSize: fs.xs, flexShrink: 1 },
   actionsCol: { gap: 10 },
   primaryBtn: {
     backgroundColor: colors.accentLime,

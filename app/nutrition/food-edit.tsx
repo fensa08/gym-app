@@ -8,14 +8,23 @@ import { createFood, updateFood, getFoods } from '../../lib/firestore/queriesHea
 export default function FoodEditModal() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
-  const { id } = useLocalSearchParams<{ id?: string }>()
+  const params = useLocalSearchParams<{
+    id?: string
+    name?: string
+    calories?: string
+    protein?: string
+    carbs?: string
+    fat?: string
+  }>()
+  const { id } = params
   const isEdit = !!id
 
-  const [name, setName] = useState('')
-  const [calories, setCalories] = useState('')
-  const [protein, setProtein] = useState('')
-  const [carbs, setCarbs] = useState('')
-  const [fat, setFat] = useState('')
+  // name/calories/etc. params prefill the form for foods scanned via barcode
+  const [name, setName] = useState(!id ? params.name ?? '' : '')
+  const [calories, setCalories] = useState(!id ? params.calories ?? '' : '')
+  const [protein, setProtein] = useState(!id ? params.protein ?? '' : '')
+  const [carbs, setCarbs] = useState(!id ? params.carbs ?? '' : '')
+  const [fat, setFat] = useState(!id ? params.fat ?? '' : '')
 
   useEffect(() => {
     if (!id) return

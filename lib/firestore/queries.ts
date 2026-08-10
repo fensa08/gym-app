@@ -102,7 +102,8 @@ export async function saveSet(
   setNumber: number,
   weightKg: number | null,
   reps: number | null,
-  isPR: boolean
+  isPR: boolean,
+  superset: number | null = null
 ): Promise<string> {
   const docRef = ref('workouts', workoutId)
   const snap = await getDoc(docRef)
@@ -120,6 +121,7 @@ export async function saveSet(
         completed: true,
         is_pr: isPR,
         rpe: null,
+        superset,
         completed_at: Date.now(),
       }],
     }
@@ -242,6 +244,7 @@ export interface WorkoutDetailSet {
   reps: number | null
   is_pr: boolean
   completed: boolean
+  superset: number | null
 }
 
 export interface WorkoutDetailExercise {
@@ -277,6 +280,7 @@ export async function getWorkoutDetail(workoutId: string): Promise<WorkoutDetail
         reps: s.reps,
         is_pr: s.is_pr ?? false,
         completed: s.completed,
+        superset: s.superset ?? null,
       })),
   })).filter((ex: WorkoutDetailExercise) => ex.sets.length > 0)
   let set_count = 0, volume = 0

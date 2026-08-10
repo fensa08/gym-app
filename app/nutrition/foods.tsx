@@ -32,9 +32,14 @@ export default function FoodsLibraryScreen() {
           <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Food Library</Text>
-        <TouchableOpacity style={styles.headerBtn} onPress={() => router.push('/nutrition/food-edit')}>
-          <Ionicons name="add" size={18} color={colors.textPrimary} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.headerBtn} onPress={() => router.push('/nutrition/scan')}>
+            <Ionicons name="barcode-outline" size={18} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerBtn} onPress={() => router.push('/nutrition/food-edit')}>
+            <Ionicons name="add" size={18} color={colors.textPrimary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.searchWrap}>
@@ -83,6 +88,7 @@ const styles = StyleSheet.create({
   },
   backBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { color: colors.textPrimary, fontFamily: fonts.serif, fontSize: 22 },
+  headerActions: { flexDirection: 'row', gap: sp.sm },
   headerBtn: {
     width: 34, height: 34, borderRadius: r.full, backgroundColor: colors.accentLime,
     alignItems: 'center', justifyContent: 'center',
