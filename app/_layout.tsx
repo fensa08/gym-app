@@ -95,13 +95,6 @@ export default function RootLayout() {
           }}
         />
         <Stack.Screen
-          name="nutrition/log"
-          options={{
-            presentation: 'transparentModal',
-            animation: 'slide_from_bottom',
-          }}
-        />
-        <Stack.Screen
           name="nutrition/food-edit"
           options={{
             presentation: 'transparentModal',

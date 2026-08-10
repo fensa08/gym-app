@@ -90,11 +90,15 @@ export interface Food {
   carbs_per_100g: number
   fat_per_100g: number
   created_at: number
+  // usage stats for recents-first search and portion memory
+  last_grams?: number
+  last_used_at?: number
+  use_count?: number
 }
 
 export interface MealItem {
   id: string
-  food_id: string
+  food_id: string | null // null for quick-added calories without a food
   food_name: string
   grams: number
   calories: number
