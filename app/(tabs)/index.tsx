@@ -210,7 +210,7 @@ export default function HomeScreen() {
 
         {/* Nutrition + Body */}
         <View style={styles.halfRow}>
-          <NutritionCard nutrition={nutrition} goals={goals} onPress={() => router.push('/nutrition')} />
+          <NutritionCard nutrition={nutrition} goals={goals} onPress={() => router.push('/food')} />
           <BodyCard
             weight={latestWeight}
             spark={weightSpark}

@@ -116,9 +116,6 @@ export default function NutritionHubScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
-        </TouchableOpacity>
         <Text style={styles.headerTitle}>Nutrition</Text>
         <TouchableOpacity style={styles.headerBtn} onPress={() => router.push('/nutrition/log')}>
           <Text style={styles.headerBtnText}>Log Today</Text>
@@ -321,7 +318,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: sp.md, paddingTop: sp.sm, paddingBottom: sp.sm,
   },
-  backBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { color: colors.textPrimary, fontFamily: fonts.serif, fontSize: 22 },
   headerBtn: { backgroundColor: colors.accentLime, borderRadius: r.full, paddingHorizontal: 14, paddingVertical: 8 },
   headerBtnText: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.xs },

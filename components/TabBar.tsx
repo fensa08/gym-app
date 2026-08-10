@@ -9,6 +9,7 @@ const ICONS: Record<string, { active: IoniconName; inactive: IoniconName }> = {
   index: { active: 'home', inactive: 'home-outline' },
   workouts: { active: 'barbell', inactive: 'barbell-outline' },
   log: { active: 'checkmark-done-circle', inactive: 'checkmark-done-circle-outline' },
+  food: { active: 'restaurant', inactive: 'restaurant-outline' },
   stats: { active: 'stats-chart', inactive: 'stats-chart-outline' },
   profile: { active: 'person-circle', inactive: 'person-circle-outline' },
 }
@@ -88,7 +89,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 3,
     paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingHorizontal: 10,
     borderRadius: 9999,
   },
   itemActive: {
