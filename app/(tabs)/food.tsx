@@ -66,6 +66,7 @@ export default function NutritionScreen() {
   const [latestWeightKg, setLatestWeightKg] = useState<number | null>(null)
 
   const [query, setQuery] = useState('')
+  const [meal, setMeal] = useState(mealForNow())
   const [searchFocused, setSearchFocused] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -127,7 +128,6 @@ export default function NutritionScreen() {
 
   async function logFood(food: Food) {
     const grams = parsed.grams ?? food.last_grams ?? 100
-    const meal = mealForNow()
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
     await addFoodToMeal(meal, food, grams, selectedDate)
     setQuery('')
@@ -136,7 +136,6 @@ export default function NutritionScreen() {
   }
 
   async function logQuickKcal(kcal: number) {
-    const meal = mealForNow()
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
     await addQuickItem(meal, { calories: kcal }, selectedDate)
     setQuery('')
@@ -266,10 +265,21 @@ export default function NutritionScreen() {
 
         {showPanel && (
           <View style={styles.panel}>
+            <View style={styles.mealChipRow}>
+              {MEAL_ORDER.map(m => (
+                <TouchableOpacity
+                  key={m}
+                  style={[styles.mealChip, meal === m && styles.mealChipActive]}
+                  onPress={() => setMeal(m)}
+                >
+                  <Text style={[styles.mealChipText, meal === m && styles.mealChipTextActive]}>{m}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
             {parsed.kcal != null ? (
               <TouchableOpacity style={styles.resultRow} onPress={() => logQuickKcal(parsed.kcal!)}>
                 <Text style={styles.resultName}>⚡ Quick add {parsed.kcal} kcal</Text>
-                <Text style={styles.resultMacro}>→ {mealForNow()}</Text>
+                <Text style={styles.resultMacro}>→ {meal}</Text>
               </TouchableOpacity>
             ) : (
               <>
@@ -580,6 +590,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderMed,
     borderRadius: r.md, marginTop: 6, overflow: 'hidden',
   },
+  mealChipRow: {
+    flexDirection: 'row', gap: 6,
+    paddingHorizontal: sp.sm, paddingTop: sp.sm, paddingBottom: 4,
+  },
+  mealChip: {
+    flex: 1, alignItems: 'center', paddingVertical: 6, borderRadius: r.full,
+    backgroundColor: colors.surfaceInput, borderWidth: 1, borderColor: colors.border,
+  },
+  mealChipActive: { backgroundColor: colors.accentDark, borderColor: colors.accentDark },
+  mealChipText: { color: colors.textSecondary, fontFamily: fonts.sansMedium, fontSize: fs.xs },
+  mealChipTextActive: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold },
   panelHint: {
     color: colors.textMuted, fontFamily: fonts.sans, fontSize: 10,
     paddingHorizontal: sp.md, paddingTop: 8, paddingBottom: 2,
