@@ -34,7 +34,15 @@
           "cameraPermission": "Allow Gym Tracker to use the camera to scan food barcodes."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "Gym Tracker reads your sleep, heart rate variability, and resting heart rate from Apple Health to calculate your daily recovery readiness score.",
+          "NSHealthUpdateUsageDescription": false,
+          "background": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

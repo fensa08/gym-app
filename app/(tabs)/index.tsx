@@ -120,7 +120,6 @@ export default function HomeScreen() {
         <View style={styles.header}>
           <View>
             <Text style={styles.date}>{formatDate()}</Text>
-            <Text style={styles.greeting}>{greeting(firstName)}</Text>
           </View>
           <LinearGradient
             colors={[colors.accentLime, colors.accentDark]}
@@ -150,6 +149,17 @@ export default function HomeScreen() {
           <StatChip icon="flame-outline" value={String(streak)} label="day streak" />
           <StatChip icon="git-compare-outline" value={`${sessionsThisWeek}/5`} label="sessions" />
           <StatChip icon="trophy-outline" value={String(prsThisMonth)} label="PRs this month" iconColor={colors.accentMid} />
+        </View>
+
+        {/* Nutrition + Body */}
+        <View style={styles.halfRow}>
+          <NutritionCard nutrition={nutrition} goals={goals} onPress={() => router.push('/food')} />
+          <BodyCard
+            weight={latestWeight}
+            spark={weightSpark}
+            daysSince={daysSinceMeasurement}
+            onPress={() => router.push('/body')}
+          />
         </View>
 
         {/* Today's Workout hero */}
@@ -207,17 +217,6 @@ export default function HomeScreen() {
 
         {/* Readiness */}
         <ReadinessCard recovery={recovery} onPress={() => router.push('/recovery')} />
-
-        {/* Nutrition + Body */}
-        <View style={styles.halfRow}>
-          <NutritionCard nutrition={nutrition} goals={goals} onPress={() => router.push('/food')} />
-          <BodyCard
-            weight={latestWeight}
-            spark={weightSpark}
-            daysSince={daysSinceMeasurement}
-            onPress={() => router.push('/body')}
-          />
-        </View>
 
         {/* Insights */}
         <TouchableOpacity
@@ -376,13 +375,6 @@ function StatChip({
   )
 }
 
-function greeting(name: string) {
-  const h = new Date().getHours()
-  if (h < 12) return `Good morning, ${name}`
-  if (h < 17) return `Good afternoon, ${name}`
-  return `Good evening, ${name}`
-}
-
 function formatDate() {
   return new Date()
     .toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
@@ -413,12 +405,6 @@ const styles = StyleSheet.create({
     fontSize: fs.xs,
     letterSpacing: 1.2,
     marginBottom: 6,
-  },
-  greeting: {
-    color: colors.textPrimary,
-    fontFamily: fonts.serif,
-    fontSize: 30,
-    lineHeight: 34,
   },
   avatar: {
     width: 44,
