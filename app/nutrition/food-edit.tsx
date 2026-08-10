@@ -15,6 +15,7 @@ export default function FoodEditModal() {
     protein?: string
     carbs?: string
     fat?: string
+    fiber?: string
   }>()
   const { id } = params
   const isEdit = !!id
@@ -25,6 +26,7 @@ export default function FoodEditModal() {
   const [protein, setProtein] = useState(!id ? params.protein ?? '' : '')
   const [carbs, setCarbs] = useState(!id ? params.carbs ?? '' : '')
   const [fat, setFat] = useState(!id ? params.fat ?? '' : '')
+  const [fiber, setFiber] = useState(!id ? params.fiber ?? '' : '')
 
   useEffect(() => {
     if (!id) return
@@ -36,6 +38,7 @@ export default function FoodEditModal() {
       setProtein(String(food.protein_per_100g))
       setCarbs(String(food.carbs_per_100g))
       setFat(String(food.fat_per_100g))
+      setFiber(String(food.fiber_per_100g ?? 0))
     })
   }, [id])
 
@@ -49,6 +52,7 @@ export default function FoodEditModal() {
       protein_per_100g: parseFloat(protein) || 0,
       carbs_per_100g: parseFloat(carbs) || 0,
       fat_per_100g: parseFloat(fat) || 0,
+      fiber_per_100g: parseFloat(fiber) || 0,
     }
     if (isEdit && id) {
       await updateFood(id, input)
@@ -113,6 +117,17 @@ export default function FoodEditModal() {
                 style={styles.input}
                 value={fat}
                 onChangeText={setFat}
+                placeholder="0"
+                placeholderTextColor={colors.textSecondary}
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>Fiber (g)</Text>
+              <TextInput
+                style={styles.input}
+                value={fiber}
+                onChangeText={setFiber}
                 placeholder="0"
                 placeholderTextColor={colors.textSecondary}
                 keyboardType="decimal-pad"

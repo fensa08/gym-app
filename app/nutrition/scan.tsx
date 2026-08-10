@@ -32,6 +32,7 @@ export default function ScanScreen() {
         protein: String(food.protein_per_100g),
         carbs: String(food.carbs_per_100g),
         fat: String(food.fat_per_100g),
+        fiber: String(food.fiber_per_100g),
       },
     })
   }

@@ -4,6 +4,7 @@ export interface ScannedFood {
   protein_per_100g: number
   carbs_per_100g: number
   fat_per_100g: number
+  fiber_per_100g: number
 }
 
 const round1 = (n: unknown) => (typeof n === 'number' && isFinite(n) ? Math.round(n * 10) / 10 : 0)
@@ -33,5 +34,6 @@ export async function lookupBarcode(barcode: string): Promise<ScannedFood | null
     protein_per_100g: round1(n['proteins_100g']),
     carbs_per_100g: round1(n['carbohydrates_100g']),
     fat_per_100g: round1(n['fat_100g']),
+    fiber_per_100g: round1(n['fiber_100g']),
   }
 }

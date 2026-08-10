@@ -92,6 +92,7 @@ export interface Food {
   protein_per_100g: number
   carbs_per_100g: number
   fat_per_100g: number
+  fiber_per_100g?: number
   created_at: number
   // usage stats for recents-first search and portion memory
   last_grams?: number
@@ -108,6 +109,7 @@ export interface MealItem {
   protein_g: number
   carbs_g: number
   fat_g: number
+  fiber_g: number
 }
 
 export interface Meal {
@@ -125,6 +127,7 @@ export interface NutritionLog {
   protein_g: number | null
   carbs_g: number | null
   fat_g: number | null
+  fiber_g: number | null
   water_ml: number | null
   pre_workout_meal: 0 | 1
   post_workout_meal: 0 | 1
@@ -138,6 +141,7 @@ export interface UserGoals {
   protein_goal: number
   carbs_goal: number
   fat_goal: number
+  fiber_goal: number
   water_goal_ml: number
   height_cm: number
   weight_goal_kg: number | null

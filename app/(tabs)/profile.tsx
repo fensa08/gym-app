@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { getRecentWorkouts, getAllPRs, getWorkoutStreak } from '../../lib/firestore/queries'
 import { isHealthKitConnected, connectHealthKit, disconnectHealthKit } from '../../lib/healthkitSync'
+import { useAuthStore } from '../../lib/store/auth'
 
 const SETTINGS: { label: string; value: string; badge?: boolean }[] = [
   { label: 'Units', value: 'Kilograms (kg)' },
@@ -17,11 +18,13 @@ const SETTINGS: { label: string; value: string; badge?: boolean }[] = [
 ]
 
 export default function ProfileScreen() {
+  const signOut = useAuthStore((s) => s.signOut)
   const [workoutCount, setWorkoutCount] = useState(0)
   const [prCount, setPrCount] = useState(0)
   const [streak, setStreak] = useState(0)
   const [hkConnected, setHkConnected] = useState(false)
   const [hkBusy, setHkBusy] = useState(false)
+  const [signOutBusy, setSignOutBusy] = useState(false)
 
   useFocusEffect(
     useCallback(() => {
@@ -54,6 +57,15 @@ export default function ProfileScreen() {
       }
     } finally {
       setHkBusy(false)
+    }
+  }
+
+  async function handleSignOut() {
+    setSignOutBusy(true)
+    try {
+      await signOut()
+    } finally {
+      setSignOutBusy(false)
     }
   }
 
@@ -114,8 +126,13 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        <TouchableOpacity style={styles.signOutBtn} activeOpacity={0.85}>
-          <Text style={styles.signOutText}>Sign Out</Text>
+        <TouchableOpacity
+          style={styles.signOutBtn}
+          activeOpacity={0.85}
+          onPress={handleSignOut}
+          disabled={signOutBusy}
+        >
+          <Text style={styles.signOutText}>{signOutBusy ? 'Signing out...' : 'Sign Out'}</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>

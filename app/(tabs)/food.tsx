@@ -58,7 +58,7 @@ export default function NutritionScreen() {
   const [weekLogs, setWeekLogs] = useState<NutritionLog[]>([])
   const [averages, setAverages] = useState<{
     avgCalories: number | null; avgProtein: number | null
-    avgCarbs: number | null; avgFat: number | null; daysLogged: number
+    avgCarbs: number | null; avgFat: number | null; avgFiber: number | null; daysLogged: number
   } | null>(null)
   const [calibration, setCalibration] = useState<{
     avgIntake: number; weightChangePerWeek: number; daysLogged: number
@@ -181,6 +181,7 @@ export default function NutritionScreen() {
   const proteinGoal = goals?.protein_goal ?? 160
   const carbsGoal = goals?.carbs_goal ?? 250
   const fatGoal = goals?.fat_goal ?? 75
+  const fiberGoal = goals?.fiber_goal ?? 30
   const waterGoal = goals?.water_goal_ml ?? 3000
 
   const todayStr = iso(new Date())
@@ -463,9 +464,11 @@ export default function NutritionScreen() {
         {/* ── Macro breakdown ── */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Macros</Text>
+          <MacroBar label="Calories" value={dayCal} goal={calGoal} color={colors.accentDark} unit=" kcal" />
           <MacroBar label="Protein" value={log?.protein_g ?? 0} goal={proteinGoal} color={colors.accentMid} unit="g" />
           <MacroBar label="Carbs" value={log?.carbs_g ?? 0} goal={carbsGoal} color="#c98a2e" unit="g" />
           <MacroBar label="Fat" value={log?.fat_g ?? 0} goal={fatGoal} color="#3d6fb0" unit="g" />
+          <MacroBar label="Fiber" value={log?.fiber_g ?? 0} goal={fiberGoal} color="#5c9c6e" unit="g" />
 
           {(proteinCal + carbsCal + fatCal) > 0 && (
             <View style={styles.splitSection}>
@@ -475,9 +478,9 @@ export default function NutritionScreen() {
                 <View style={[styles.splitSegment, { flex: fatPct, backgroundColor: '#3d6fb0' }]} />
               </View>
               <View style={styles.splitLegend}>
-                <SplitLegendItem color={colors.accentMid} label={`P ${proteinPct}%`} />
-                <SplitLegendItem color="#c98a2e" label={`C ${carbsPct}%`} />
-                <SplitLegendItem color="#3d6fb0" label={`F ${fatPct}%`} />
+                <SplitLegendItem color={colors.accentMid} label={`P ${Math.round(log?.protein_g ?? 0)}g`} />
+                <SplitLegendItem color="#c98a2e" label={`C ${Math.round(log?.carbs_g ?? 0)}g`} />
+                <SplitLegendItem color="#3d6fb0" label={`F ${Math.round(log?.fat_g ?? 0)}g`} />
               </View>
             </View>
           )}
@@ -500,6 +503,7 @@ export default function NutritionScreen() {
               <AvgCell label="Avg Protein" value={averages.avgProtein} goal={proteinGoal} unit="g" />
               <AvgCell label="Avg Carbs" value={averages.avgCarbs} goal={carbsGoal} unit="g" />
               <AvgCell label="Avg Fat" value={averages.avgFat} goal={fatGoal} unit="g" />
+              <AvgCell label="Avg Fiber" value={averages.avgFiber} goal={fiberGoal} unit="g" />
             </View>
           )}
         </View>
@@ -552,7 +556,7 @@ function AvgCell({ label, value, goal, unit }: { label: string; value: number | 
     <View style={avgStyles.cell}>
       <Text style={avgStyles.label}>{label}</Text>
       <Text style={avgStyles.value}>{value != null ? Math.round(value) : '—'}<Text style={avgStyles.unit}> {unit}</Text></Text>
-      {pct != null && <Text style={[avgStyles.pct, pct >= 90 ? avgStyles.pctGood : pct >= 70 ? avgStyles.pctWarn : avgStyles.pctLow]}>{pct}% of goal</Text>}
+      {pct != null && <Text style={[avgStyles.pct, pct >= 90 ? avgStyles.pctGood : pct >= 70 ? avgStyles.pctWarn : avgStyles.pctLow]}>{Math.round(goal)} {unit} goal</Text>}
     </View>
   )
 }

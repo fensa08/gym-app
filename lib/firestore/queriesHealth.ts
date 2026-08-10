@@ -244,6 +244,7 @@ export interface FoodInput {
   protein_per_100g: number
   carbs_per_100g: number
   fat_per_100g: number
+  fiber_per_100g?: number
 }
 
 export async function getFoods(): Promise<Food[]> {
@@ -274,17 +275,18 @@ export interface NutritionInput {
   notes?: string | null
 }
 
-function mealTotals(meals: Meal[]): { calories: number; protein_g: number; carbs_g: number; fat_g: number } {
-  let calories = 0, protein_g = 0, carbs_g = 0, fat_g = 0
+function mealTotals(meals: Meal[]): { calories: number; protein_g: number; carbs_g: number; fat_g: number; fiber_g: number } {
+  let calories = 0, protein_g = 0, carbs_g = 0, fat_g = 0, fiber_g = 0
   for (const meal of meals) {
     for (const item of meal.items) {
       calories += item.calories
       protein_g += item.protein_g
       carbs_g += item.carbs_g
       fat_g += item.fat_g
+      fiber_g += item.fiber_g ?? 0
     }
   }
-  return { calories, protein_g, carbs_g, fat_g }
+  return { calories, protein_g, carbs_g, fat_g, fiber_g }
 }
 
 export async function upsertNutritionLog(input: NutritionInput, date = today()): Promise<void> {
@@ -323,6 +325,7 @@ export async function addFoodToMeal(
     protein_g: Math.round(((food.protein_per_100g * grams) / 100) * 10) / 10,
     carbs_g: Math.round(((food.carbs_per_100g * grams) / 100) * 10) / 10,
     fat_g: Math.round(((food.fat_per_100g * grams) / 100) * 10) / 10,
+    fiber_g: Math.round((((food.fiber_per_100g ?? 0) * grams) / 100) * 10) / 10,
   }
 
   const normalizedName = mealName.trim() || 'Meal'
@@ -353,7 +356,7 @@ export async function addFoodToMeal(
 
 export async function addQuickItem(
   mealName: string,
-  macros: { calories: number; protein_g?: number; carbs_g?: number; fat_g?: number },
+  macros: { calories: number; protein_g?: number; carbs_g?: number; fat_g?: number; fiber_g?: number },
   date = today()
 ): Promise<void> {
   const snap = await getDoc(ref('nutrition_logs', date))
@@ -369,6 +372,7 @@ export async function addQuickItem(
     protein_g: macros.protein_g ?? 0,
     carbs_g: macros.carbs_g ?? 0,
     fat_g: macros.fat_g ?? 0,
+    fiber_g: macros.fiber_g ?? 0,
   }
 
   const normalizedName = mealName.trim() || 'Meal'
@@ -414,6 +418,7 @@ export async function updateMealItemGrams(
           protein_g: Math.round(it.protein_g * ratio * 10) / 10,
           carbs_g: Math.round(it.carbs_g * ratio * 10) / 10,
           fat_g: Math.round(it.fat_g * ratio * 10) / 10,
+          fiber_g: Math.round((it.fiber_g ?? 0) * ratio * 10) / 10,
         }
       }),
     }
@@ -491,6 +496,7 @@ const GOALS_DEFAULTS: UserGoals = {
   protein_goal: 160,
   carbs_goal: 250,
   fat_goal: 75,
+  fiber_goal: 30,
   water_goal_ml: 3000,
   height_cm: 178,
   weight_goal_kg: null,
@@ -510,6 +516,7 @@ export async function updateUserGoals(goals: Partial<Omit<UserGoals, 'id'>>): Pr
     protein_goal: merged.protein_goal,
     carbs_goal: merged.carbs_goal,
     fat_goal: merged.fat_goal,
+    fiber_goal: merged.fiber_goal,
     water_goal_ml: merged.water_goal_ml,
     height_cm: merged.height_cm,
     weight_goal_kg: merged.weight_goal_kg ?? null,
@@ -521,11 +528,12 @@ export async function getNutritionAverages(days = 7): Promise<{
   avgProtein: number | null
   avgCarbs: number | null
   avgFat: number | null
+  avgFiber: number | null
   daysLogged: number
 }> {
   const logs = await getNutritionLogs(days)
   const withCal = logs.filter(l => l.calories != null)
-  if (withCal.length === 0) return { avgCalories: null, avgProtein: null, avgCarbs: null, avgFat: null, daysLogged: 0 }
+  if (withCal.length === 0) return { avgCalories: null, avgProtein: null, avgCarbs: null, avgFat: null, avgFiber: null, daysLogged: 0 }
   const avg = (arr: (number | null)[]) => {
     const valid = arr.filter((v): v is number => v != null)
     return valid.length ? valid.reduce((s, v) => s + v, 0) / valid.length : null
@@ -535,6 +543,7 @@ export async function getNutritionAverages(days = 7): Promise<{
     avgProtein: avg(withCal.map(l => l.protein_g)),
     avgCarbs: avg(withCal.map(l => l.carbs_g)),
     avgFat: avg(withCal.map(l => l.fat_g)),
+    avgFiber: avg(withCal.map(l => l.fiber_g)),
     daysLogged: withCal.length,
   }
 }

@@ -284,7 +284,7 @@ function NutritionCard({
             <View key={row.label}>
               <View style={styles.miniBarRow}>
                 <Text style={styles.miniBarLabel}>{row.label}</Text>
-                <Text style={styles.miniBarPct}>{Math.round(pct * 100)}%</Text>
+                <Text style={styles.miniBarPct}>{`${Math.round(row.value)}${row.unit} / ${Math.round(row.goal)}${row.unit}`}</Text>
               </View>
               <View style={styles.miniBarTrack}>
                 <View style={[styles.miniBarFill, { width: `${pct * 100}%` }]} />
