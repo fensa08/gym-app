@@ -136,6 +136,9 @@ export async function upsertRecoveryLog(input: RecoveryInput, date = today()): P
     soreness_shoulders: input.soreness_shoulders ?? 0,
     soreness_arms: input.soreness_arms ?? 0,
     logged_at: Date.now(),
+    // A manual save always takes ownership of the fields it writes, so a
+    // later Apple Health sync won't overwrite what the user just typed.
+    hk_synced: { sleep_hours: false, hrv: false, resting_hr: false },
   })
 }
 
@@ -143,6 +146,76 @@ export async function getLatestRecoveryLog(): Promise<RecoveryLog | null> {
   const snap = await getDocs(query(col('recovery_logs'), orderBy('date', 'desc'), limit(1)))
   if (snap.empty) return null
   return { id: 0, ...snap.docs[0].data() } as RecoveryLog
+}
+
+export async function getRecoveryLog(date: string): Promise<RecoveryLog | null> {
+  const snap = await getDoc(ref('recovery_logs', date))
+  if (!snap.exists()) return null
+  return { id: 0, ...snap.data() } as RecoveryLog
+}
+
+/**
+ * Auto-fills sleep_hours/hrv/resting_hr from Apple Health, per day. A field
+ * is only written if it's currently empty or was itself last set by a sync
+ * (hk_synced[field] === true) — a manually entered value is never clobbered.
+ */
+export async function mergeHealthKitMetrics(
+  metrics: { date: string; sleep_hours?: number; hrv?: number; resting_hr?: number }[]
+): Promise<void> {
+  for (const m of metrics) {
+    const snap = await getDoc(ref('recovery_logs', m.date))
+    const existing = snap.exists() ? (snap.data() as Partial<RecoveryLog>) : null
+    const synced = existing?.hk_synced ?? {}
+
+    const canWrite = (field: 'sleep_hours' | 'hrv' | 'resting_hr') =>
+      existing == null || existing[field] == null || synced[field] === true
+
+    const update: Record<string, unknown> = {}
+    const newSynced = { ...synced }
+    let changed = false
+
+    if (m.sleep_hours != null && canWrite('sleep_hours')) {
+      update.sleep_hours = m.sleep_hours
+      newSynced.sleep_hours = true
+      changed = true
+    }
+    if (m.hrv != null && canWrite('hrv')) {
+      update.hrv = m.hrv
+      newSynced.hrv = true
+      changed = true
+    }
+    if (m.resting_hr != null && canWrite('resting_hr')) {
+      update.resting_hr = m.resting_hr
+      newSynced.resting_hr = true
+      changed = true
+    }
+    if (!changed) continue
+
+    if (existing == null) {
+      await setDoc(ref('recovery_logs', m.date), {
+        date: m.date,
+        sleep_hours: null,
+        sleep_quality: null,
+        stress_level: null,
+        resting_hr: null,
+        hrv: null,
+        soreness_chest: 0,
+        soreness_back: 0,
+        soreness_legs: 0,
+        soreness_shoulders: 0,
+        soreness_arms: 0,
+        logged_at: Date.now(),
+        ...update,
+        hk_synced: newSynced,
+      })
+    } else {
+      await setDoc(
+        ref('recovery_logs', m.date),
+        { ...update, hk_synced: newSynced, logged_at: Date.now() },
+        { merge: true }
+      )
+    }
+  }
 }
 
 export async function getRecoveryLogs(days = 7): Promise<RecoveryLog[]> {

@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native'
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Platform } from 'react-native'
 import { useRouter, useFocusEffect } from 'expo-router'
 import { useState, useCallback } from 'react'
 import { Ionicons } from '@expo/vector-icons'
@@ -7,6 +7,12 @@ import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { ReadinessRing } from '../../components/Ring'
 import { SorenessGrid } from '../../components/Selectors'
 import { getRecoveryLogs, getLatestRecoveryLog, readinessScore } from '../../lib/firestore/queriesHealth'
+import {
+  isHealthKitConnected,
+  hasHealthKitData,
+  connectHealthKit,
+  syncHealthKitIfNeeded,
+} from '../../lib/healthkitSync'
 import type { RecoveryLog, MuscleGroupKey } from '../../lib/types'
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
@@ -22,17 +28,37 @@ export default function RecoveryHubScreen() {
   const router = useRouter()
   const [latest, setLatest] = useState<RecoveryLog | null>(null)
   const [weekLogs, setWeekLogs] = useState<RecoveryLog[]>([])
+  const [hkConnected, setHkConnected] = useState(false)
+  const [hkHasData, setHkHasData] = useState(true)
+  const [hkConnecting, setHkConnecting] = useState(false)
 
   useFocusEffect(
     useCallback(() => {
-      loadData()
+      syncHealthKitIfNeeded().finally(loadData)
     }, [])
   )
 
   async function loadData() {
-    const [l, week] = await Promise.all([getLatestRecoveryLog(), getRecoveryLogs(7)])
+    const [l, week, connected, hadData] = await Promise.all([
+      getLatestRecoveryLog(),
+      getRecoveryLogs(7),
+      isHealthKitConnected(),
+      hasHealthKitData(),
+    ])
     setLatest(l)
     setWeekLogs(week)
+    setHkConnected(connected)
+    setHkHasData(hadData)
+  }
+
+  async function handleConnectHealthKit() {
+    setHkConnecting(true)
+    try {
+      const result = await connectHealthKit()
+      if (result === 'connected') await loadData()
+    } finally {
+      setHkConnecting(false)
+    }
   }
 
   const score = readinessScore(latest)
@@ -93,10 +119,44 @@ export default function RecoveryHubScreen() {
         </View>
 
         <View style={styles.statsRow}>
-          <StatChip label="Sleep" value={latest?.sleep_hours != null ? `${latest.sleep_hours}h` : '—'} />
-          <StatChip label="HRV" value={latest?.hrv != null ? `${latest.hrv}ms` : '—'} />
-          <StatChip label="Resting HR" value={latest?.resting_hr != null ? `${latest.resting_hr}bpm` : '—'} />
+          <StatChip
+            label="Sleep"
+            value={latest?.sleep_hours != null ? `${latest.sleep_hours}h` : '—'}
+            synced={latest?.hk_synced?.sleep_hours}
+          />
+          <StatChip label="HRV" value={latest?.hrv != null ? `${latest.hrv}ms` : '—'} synced={latest?.hk_synced?.hrv} />
+          <StatChip
+            label="Resting HR"
+            value={latest?.resting_hr != null ? `${latest.resting_hr}bpm` : '—'}
+            synced={latest?.hk_synced?.resting_hr}
+          />
         </View>
+
+        {Platform.OS === 'ios' && !hkConnected && (
+          <TouchableOpacity
+            style={styles.hkCard}
+            onPress={handleConnectHealthKit}
+            activeOpacity={0.85}
+            disabled={hkConnecting}
+          >
+            <Ionicons name="heart" size={22} color={colors.error} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.hkCardTitle}>Connect Apple Health</Text>
+              <Text style={styles.hkCardSubtitle}>
+                Auto-fill sleep, HRV, and resting heart rate from your Apple Watch
+              </Text>
+            </View>
+            <Text style={styles.hkCardAction}>{hkConnecting ? '...' : 'Connect'}</Text>
+          </TouchableOpacity>
+        )}
+
+        {Platform.OS === 'ios' && hkConnected && !hkHasData && (
+          <View style={styles.hkHintCard}>
+            <Text style={styles.hkHintText}>
+              No Apple Health data found. Check Settings → Privacy & Security → Health → Gym Tracker.
+            </Text>
+          </View>
+        )}
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>7-Day Readiness</Text>
@@ -141,9 +201,14 @@ export default function RecoveryHubScreen() {
   )
 }
 
-function StatChip({ label, value }: { label: string; value: string }) {
+function StatChip({ label, value, synced }: { label: string; value: string; synced?: boolean }) {
   return (
     <View style={styles.statChip}>
+      {synced && (
+        <View style={styles.statChipBadge}>
+          <Ionicons name="heart" size={10} color={colors.error} />
+        </View>
+      )}
       <Text style={styles.statChipValue}>{value}</Text>
       <Text style={styles.statChipLabel}>{label}</Text>
     </View>
@@ -186,8 +251,32 @@ const styles = StyleSheet.create({
     padding: 12,
     alignItems: 'center',
   },
+  statChipBadge: { position: 'absolute', top: 8, right: 8 },
   statChipValue: { color: colors.textPrimary, fontFamily: fonts.monoSemiBold, fontSize: fs.lg },
   statChipLabel: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.xs, marginTop: 4 },
+  hkCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sp.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: r.lg,
+    padding: sp.md,
+    marginBottom: sp.md,
+  },
+  hkCardTitle: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.sm },
+  hkCardSubtitle: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.xs, marginTop: 2 },
+  hkCardAction: { color: colors.accentMid, fontFamily: fonts.sansSemiBold, fontSize: fs.sm },
+  hkHintCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: r.lg,
+    padding: sp.md,
+    marginBottom: sp.md,
+  },
+  hkHintText: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.xs, lineHeight: 16 },
   card: {
     backgroundColor: colors.surface,
     borderWidth: 1,

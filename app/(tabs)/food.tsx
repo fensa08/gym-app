@@ -70,6 +70,7 @@ export default function NutritionScreen() {
   const [searchFocused, setSearchFocused] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [editing, setEditing] = useState<{ mealId: string; itemId: string } | null>(null)
   const [editGrams, setEditGrams] = useState('')
@@ -236,6 +237,10 @@ export default function NutritionScreen() {
           <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/nutrition/foods')}>
             <Ionicons name="library-outline" size={18} color={colors.textPrimary} />
           </TouchableOpacity>
+          <TouchableOpacity style={styles.addCta} onPress={() => searchRef.current?.focus()}>
+            <Ionicons name="add" size={18} color={colors.textPrimary} />
+            <Text style={styles.addCtaText}>Add food</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -248,8 +253,15 @@ export default function NutritionScreen() {
             style={styles.searchInput}
             value={query}
             onChangeText={setQuery}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setSearchFocused(false)}
+            onFocus={() => {
+              if (blurTimer.current) clearTimeout(blurTimer.current)
+              setSearchFocused(true)
+            }}
+            onBlur={() => {
+              // delay so a tap on a panel row (recent food, meal chip) can register
+              // before the panel unmounts — TextInput blur otherwise wins the race
+              blurTimer.current = setTimeout(() => setSearchFocused(false), 150)
+            }}
             placeholder="Log food… (e.g. chicken 180, or 450 for kcal)"
             placeholderTextColor={colors.textMuted}
             returnKeyType="done"
@@ -577,6 +589,12 @@ const styles = StyleSheet.create({
     width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
+  addCta: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    height: 36, paddingHorizontal: 12, borderRadius: 18,
+    backgroundColor: colors.accentDark, borderWidth: 1, borderColor: colors.accentDark,
+  },
+  addCtaText: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.xs },
 
   searchWrap: { paddingHorizontal: sp.md, paddingBottom: sp.sm, zIndex: 10 },
   searchBar: {

@@ -80,6 +80,9 @@ export interface RecoveryLog {
   soreness_shoulders: SorenessLevel
   soreness_arms: SorenessLevel
   logged_at: number
+  // Which of sleep_hours/hrv/resting_hr were last written by an Apple Health
+  // sync (vs a manual check-in) — lets sync avoid clobbering manual edits.
+  hk_synced?: { sleep_hours?: boolean; hrv?: boolean; resting_hr?: boolean }
 }
 
 export interface Food {

@@ -1,6 +1,6 @@
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
-import { View, ActivityIndicator } from 'react-native'
+import { View, ActivityIndicator, AppState } from 'react-native'
 import { useEffect } from 'react'
 import { useFonts as useCormorant, CormorantGaramond_400Regular, CormorantGaramond_500Medium } from '@expo-google-fonts/cormorant-garamond'
 import { useFonts as useInter, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter'
@@ -8,6 +8,7 @@ import { useFonts as useJetBrainsMono, JetBrainsMono_400Regular, JetBrainsMono_6
 import { colors } from '../lib/theme'
 import { useAuthStore } from '../lib/store/auth'
 import { seedExercises } from '../lib/firestore/seed'
+import { syncHealthKitIfNeeded } from '../lib/healthkitSync'
 
 export default function RootLayout() {
   const [cormorantLoaded] = useCormorant({ CormorantGaramond_400Regular, CormorantGaramond_500Medium })
@@ -33,6 +34,15 @@ export default function RootLayout() {
       router.replace('/(tabs)')
     }
   }, [user, loading, segments])
+
+  useEffect(() => {
+    if (!user) return
+    syncHealthKitIfNeeded()
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') syncHealthKitIfNeeded()
+    })
+    return () => sub.remove()
+  }, [user])
 
   const fontsReady = cormorantLoaded && interLoaded && monoLoaded
   const needsRedirect = !loading && ((!user && !inAuthGroup) || (user && inAuthGroup))

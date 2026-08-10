@@ -1,10 +1,11 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native'
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useState, useCallback } from 'react'
 import { useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { getRecentWorkouts, getAllPRs, getWorkoutStreak } from '../../lib/firestore/queries'
+import { isHealthKitConnected, connectHealthKit, disconnectHealthKit } from '../../lib/healthkitSync'
 
 const SETTINGS: { label: string; value: string; badge?: boolean }[] = [
   { label: 'Units', value: 'Kilograms (kg)' },
@@ -19,6 +20,8 @@ export default function ProfileScreen() {
   const [workoutCount, setWorkoutCount] = useState(0)
   const [prCount, setPrCount] = useState(0)
   const [streak, setStreak] = useState(0)
+  const [hkConnected, setHkConnected] = useState(false)
+  const [hkBusy, setHkBusy] = useState(false)
 
   useFocusEffect(
     useCallback(() => {
@@ -27,14 +30,31 @@ export default function ProfileScreen() {
   )
 
   async function loadData() {
-    const [ws, prs, s] = await Promise.all([
+    const [ws, prs, s, connected] = await Promise.all([
       getRecentWorkouts(1000),
       getAllPRs(),
       getWorkoutStreak(),
+      isHealthKitConnected(),
     ])
     setWorkoutCount(ws.length)
     setPrCount(prs.length)
     setStreak(s)
+    setHkConnected(connected)
+  }
+
+  async function toggleHealthKit() {
+    setHkBusy(true)
+    try {
+      if (hkConnected) {
+        await disconnectHealthKit()
+        setHkConnected(false)
+      } else {
+        const result = await connectHealthKit()
+        setHkConnected(result === 'connected')
+      }
+    } finally {
+      setHkBusy(false)
+    }
   }
 
   return (
@@ -64,6 +84,21 @@ export default function ProfileScreen() {
         {/* Settings */}
         <Text style={styles.sectionLabel}>Preferences</Text>
         <View style={styles.settingsCard}>
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity
+              style={[styles.settingRow, styles.settingRowBorder]}
+              onPress={toggleHealthKit}
+              disabled={hkBusy}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.settingLabel}>Apple Health</Text>
+              <View style={styles.settingRight}>
+                <Text style={styles.settingValue}>
+                  {hkBusy ? '...' : hkConnected ? 'Connected' : 'Not connected'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          )}
           {SETTINGS.map((s, i) => (
             <View key={s.label} style={[styles.settingRow, i < SETTINGS.length - 1 && styles.settingRowBorder]}>
               <Text style={styles.settingLabel}>{s.label}</Text>

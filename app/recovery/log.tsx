@@ -3,7 +3,11 @@ import { useRouter } from 'expo-router'
 import { useState, useEffect } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
-import { upsertRecoveryLog, getLatestRecoveryLog } from '../../lib/firestore/queriesHealth'
+import { upsertRecoveryLog, getRecoveryLog } from '../../lib/firestore/queriesHealth'
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10)
+}
 import { RPESelector, SorenessGrid } from '../../components/Selectors'
 import type { MuscleGroupKey, SorenessLevel } from '../../lib/types'
 
@@ -25,13 +29,15 @@ export default function LogRecoveryModal() {
   const [restingHr, setRestingHr] = useState('')
   const [hrv, setHrv] = useState('')
   const [soreness, setSoreness] = useState<Record<MuscleGroupKey, SorenessLevel>>(EMPTY_SORENESS)
+  const [syncedFields, setSyncedFields] = useState<{ sleep_hours?: boolean; hrv?: boolean; resting_hr?: boolean }>({})
 
   useEffect(() => {
-    getLatestRecoveryLog().then((log) => {
+    getRecoveryLog(today()).then((log) => {
       if (!log) return
       if (log.sleep_hours != null) setSleepHours(log.sleep_hours)
       if (log.resting_hr != null) setRestingHr(String(log.resting_hr))
       if (log.hrv != null) setHrv(String(log.hrv))
+      setSyncedFields(log.hk_synced ?? {})
     })
   }, [])
 
@@ -85,22 +91,30 @@ export default function LogRecoveryModal() {
 
           <View style={[styles.numRow, { marginTop: sp.md }]}>
             <View style={styles.numField}>
-              <Text style={styles.fieldLabel}>Resting HR (bpm)</Text>
+              <Text style={styles.fieldLabel}>
+                Resting HR (bpm){syncedFields.resting_hr ? ' · from Apple Health' : ''}
+              </Text>
               <TextInput
                 style={styles.fieldInput}
                 value={restingHr}
-                onChangeText={setRestingHr}
+                onChangeText={(v) => {
+                  setRestingHr(v)
+                  setSyncedFields((f) => ({ ...f, resting_hr: false }))
+                }}
                 placeholder="0"
                 placeholderTextColor={colors.textSecondary}
                 keyboardType="number-pad"
               />
             </View>
             <View style={styles.numField}>
-              <Text style={styles.fieldLabel}>HRV (ms)</Text>
+              <Text style={styles.fieldLabel}>HRV (ms){syncedFields.hrv ? ' · from Apple Health' : ''}</Text>
               <TextInput
                 style={styles.fieldInput}
                 value={hrv}
-                onChangeText={setHrv}
+                onChangeText={(v) => {
+                  setHrv(v)
+                  setSyncedFields((f) => ({ ...f, hrv: false }))
+                }}
                 placeholder="0"
                 placeholderTextColor={colors.textSecondary}
                 keyboardType="number-pad"

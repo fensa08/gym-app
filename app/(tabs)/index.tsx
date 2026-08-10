@@ -19,7 +19,6 @@ import {
 } from '../../lib/firestore/queriesHealth'
 import { getTopInsight, SIGNAL_COLORS, type SignalColor } from '../../lib/insights'
 import { useWorkoutStore } from '../../lib/store/workout'
-import { useAuthStore } from '../../lib/store/auth'
 import { TEMPLATES } from '../../lib/templates'
 import type { Workout, BodyWeightLog, RecoveryLog, NutritionLog, UserGoals } from '../../lib/types'
 
@@ -28,8 +27,6 @@ const WEEK_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 export default function HomeScreen() {
   const router = useRouter()
   const { isActive } = useWorkoutStore()
-  const user = useAuthStore((s) => s.user)
-  const firstName = user?.displayName?.split(' ')[0] ?? 'there'
   const [recentWorkouts, setRecentWorkouts] = useState<Workout[]>([])
   const [streak, setStreak] = useState(0)
   const [prsThisMonth, setPrsThisMonth] = useState(0)
@@ -116,21 +113,6 @@ export default function HomeScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.date}>{formatDate()}</Text>
-          </View>
-          <LinearGradient
-            colors={[colors.accentLime, colors.accentDark]}
-            style={styles.avatar}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <Text style={styles.avatarLetter}>{firstName[0].toUpperCase()}</Text>
-          </LinearGradient>
-        </View>
-
         {/* Active workout resume banner */}
         {isActive && (
           <TouchableOpacity
@@ -375,12 +357,6 @@ function StatChip({
   )
 }
 
-function formatDate() {
-  return new Date()
-    .toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
-    .toUpperCase()
-}
-
 function fmtRelative(ts: number) {
   const days = Math.floor((Date.now() - ts) / 86400000)
   if (days <= 0) return 'today'
@@ -392,28 +368,6 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   scroll: { flex: 1 },
   content: { padding: sp.md, paddingTop: sp.sm, paddingBottom: 120 },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: sp.md,
-    marginTop: sp.xs,
-  },
-  date: {
-    color: colors.textSecondary,
-    fontFamily: fonts.sansSemiBold,
-    fontSize: fs.xs,
-    letterSpacing: 1.2,
-    marginBottom: 6,
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarLetter: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.md },
   activeBanner: {
     flexDirection: 'row',
     alignItems: 'center',
