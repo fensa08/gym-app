@@ -18,6 +18,7 @@ import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { useWorkoutStore, type RestLogEntry } from '../../lib/store/workout'
 import {
   saveSet,
+  deleteSet,
   finishWorkout as dbFinishWorkout,
   getPersonalRecord,
   deleteWorkout,
@@ -52,6 +53,7 @@ export default function ActiveWorkoutScreen() {
     setCurrentExercise,
     addExercise,
     addSet,
+    removeSet,
     startSuperset,
     endSuperset,
     startRestTimer,
@@ -84,6 +86,7 @@ export default function ActiveWorkoutScreen() {
     if (!currentExercise) return
     const setNumber = currentExercise.loggedSets.length + 1
     let isPR = false
+    let setId: string | undefined
     try {
       if (currentExercise.workoutExerciseId) {
         const pr = await getPersonalRecord(currentExercise.exerciseId)
@@ -92,14 +95,37 @@ export default function ActiveWorkoutScreen() {
           setPrLabel(currentExercise.name)
           setTimeout(() => setPrLabel(null), 2200)
         }
-        await saveSet(workoutId!, currentExercise.workoutExerciseId!, setNumber, kgInput, repsInput, isPR, activeSuperset)
+        setId = await saveSet(workoutId!, currentExercise.workoutExerciseId!, setNumber, kgInput, repsInput, isPR, activeSuperset)
       }
     } catch (err) {
       console.error('Failed to save set:', err)
       Alert.alert('Could not save set', errorMessage(err))
       return
     }
-    addSet(currentExerciseIndex, { reps: repsInput, kg: kgInput, superset: activeSuperset })
+    addSet(currentExerciseIndex, { id: setId, reps: repsInput, kg: kgInput, superset: activeSuperset })
+  }
+
+  function handleDeleteSet(exerciseIndex: number, setIndex: number) {
+    const ex = exercises[exerciseIndex]
+    const set = ex.loggedSets[setIndex]
+    Alert.alert('Delete set?', `Set ${setIndex + 1}: ${set.reps}×${set.kg}kg`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          removeSet(exerciseIndex, setIndex)
+          if (workoutId && ex.workoutExerciseId && set.id) {
+            try {
+              await deleteSet(workoutId, ex.workoutExerciseId, set.id)
+            } catch (err) {
+              console.error('Failed to delete set:', err)
+              Alert.alert('Could not delete set', errorMessage(err))
+            }
+          }
+        },
+      },
+    ])
   }
 
   async function handleAddCustomExercise() {
@@ -212,6 +238,7 @@ export default function ActiveWorkoutScreen() {
           onFinish={handleFinish}
           activeSuperset={activeSuperset}
           onToggleSuperset={() => (activeSuperset != null ? endSuperset() : startSuperset())}
+          onDeleteSet={(setIndex) => handleDeleteSet(currentExerciseIndex, setIndex)}
         />
       )}
 
@@ -300,6 +327,7 @@ function LoggingView({
   onFinish,
   activeSuperset,
   onToggleSuperset,
+  onDeleteSet,
 }: {
   exercise: NonNullable<ReturnType<typeof useWorkoutStore.getState>['exercises']>[number]
   index: number
@@ -315,6 +343,7 @@ function LoggingView({
   onFinish(): void
   activeSuperset: number | null
   onToggleSuperset(): void
+  onDeleteSet(setIndex: number): void
 }) {
   return (
     <View style={styles.screen}>
@@ -359,12 +388,16 @@ function LoggingView({
         {exercise.loggedSets.length > 0 && (
           <View style={[styles.chipsWrap, styles.loggedChips]}>
             {exercise.loggedSets.map((set, i) => (
-              <View key={i} style={[styles.setChip, set.superset != null && styles.setChipSuperset]}>
+              <TouchableOpacity
+                key={i}
+                style={[styles.setChip, set.superset != null && styles.setChipSuperset]}
+                onPress={() => onDeleteSet(i)}
+              >
                 <Text style={styles.setChipText}>
                   Set {i + 1}: {set.reps}×{set.kg}kg
                   {set.superset != null ? ` · SS${set.superset}` : ''}
                 </Text>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         )}

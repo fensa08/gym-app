@@ -33,6 +33,7 @@ interface WorkoutStore {
   setCurrentExercise(index: number): void
   addExercise(exercise: ActiveExercise): void
   addSet(exerciseIndex: number, set: LoggedSet): void
+  removeSet(exerciseIndex: number, setIndex: number): void
   startRestTimer(duration?: number): void
   stopRestTimer(): void
   setRestDuration(seconds: number): void
@@ -89,6 +90,14 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
     const exercises = [...get().exercises]
     const ex = { ...exercises[exerciseIndex] }
     ex.loggedSets = [...ex.loggedSets, loggedSet]
+    exercises[exerciseIndex] = ex
+    set({ exercises })
+  },
+
+  removeSet(exerciseIndex, setIndex) {
+    const exercises = [...get().exercises]
+    const ex = { ...exercises[exerciseIndex] }
+    ex.loggedSets = ex.loggedSets.filter((_, i) => i !== setIndex)
     exercises[exerciseIndex] = ex
     set({ exercises })
   },

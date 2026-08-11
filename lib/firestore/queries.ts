@@ -109,9 +109,9 @@ export async function saveSet(
   const docRef = ref('workouts', workoutId)
   const snap = await getDoc(docRef)
   if (!snap.exists()) return ''
+  const setId = `${workoutExerciseId}_s${setNumber}_${Date.now()}`
   const exercises = (snap.data().exercises || []).map((ex: any) => {
     if (ex.workoutExerciseId !== workoutExerciseId) return ex
-    const setId = `${workoutExerciseId}_s${setNumber}`
     return {
       ...ex,
       sets: [...(ex.sets || []), {
@@ -128,7 +128,22 @@ export async function saveSet(
     }
   })
   await updateDoc(docRef, { exercises })
-  return `${workoutExerciseId}_s${setNumber}`
+  return setId
+}
+
+export async function deleteSet(
+  workoutId: string,
+  workoutExerciseId: string,
+  setId: string
+): Promise<void> {
+  const docRef = ref('workouts', workoutId)
+  const snap = await getDoc(docRef)
+  if (!snap.exists()) return
+  const exercises = (snap.data().exercises || []).map((ex: any) => {
+    if (ex.workoutExerciseId !== workoutExerciseId) return ex
+    return { ...ex, sets: (ex.sets || []).filter((s: any) => s.id !== setId) }
+  })
+  await updateDoc(docRef, { exercises })
 }
 
 export async function getPreviousSets(
