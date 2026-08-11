@@ -209,20 +209,31 @@ export default function NutritionScreen() {
           </TouchableOpacity>
         )}
 
-        {/* ── Rings + water ── */}
-        <View style={styles.ringsCard}>
-          <View style={styles.ringsRow}>
-            <ProgressRing value={log?.protein_g ?? 0} goal={proteinGoal} size={72} color={colors.accentMid} label="Protein" />
-            <ProgressRing value={dayCal} goal={calGoal} size={100} color={colors.accentDark} label="Calories" />
-            <ProgressRing value={log?.water_ml ?? 0} goal={waterGoal} size={72} color="#3d6fb0" label="Water" />
+        {/* ── Rings + water, with macros alongside ── */}
+        <View style={styles.topRow}>
+          <View style={styles.ringsCard}>
+            <ProgressRing value={dayCal} goal={calGoal} size={84} color={colors.accentDark} label="Calories" />
+            <View style={styles.ringsRow}>
+              <ProgressRing value={log?.protein_g ?? 0} goal={proteinGoal} size={54} color={colors.accentMid} label="Protein" />
+              <ProgressRing value={log?.water_ml ?? 0} goal={waterGoal} size={54} color="#3d6fb0" label="Water" />
+            </View>
+            <View style={styles.waterRow}>
+              <TouchableOpacity style={styles.waterChip} onPress={() => addWater(250)}>
+                <Text style={styles.waterChipText}>+250</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.waterChip} onPress={() => addWater(500)}>
+                <Text style={styles.waterChipText}>+500</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-          <View style={styles.waterRow}>
-            <TouchableOpacity style={styles.waterChip} onPress={() => addWater(250)}>
-              <Text style={styles.waterChipText}>+250ml</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.waterChip} onPress={() => addWater(500)}>
-              <Text style={styles.waterChipText}>+500ml</Text>
-            </TouchableOpacity>
+
+          <View style={styles.macrosCard}>
+            <Text style={[styles.cardTitle, { marginBottom: sp.sm }]}>Macros</Text>
+            <MacroBar label="Calories" value={dayCal} goal={calGoal} color={colors.accentDark} unit=" kcal" compact />
+            <MacroBar label="Protein" value={log?.protein_g ?? 0} goal={proteinGoal} color={colors.accentMid} unit="g" compact />
+            <MacroBar label="Carbs" value={log?.carbs_g ?? 0} goal={carbsGoal} color="#c98a2e" unit="g" compact />
+            <MacroBar label="Fat" value={log?.fat_g ?? 0} goal={fatGoal} color="#3d6fb0" unit="g" compact />
+            <MacroBar label="Fiber" value={log?.fiber_g ?? 0} goal={fiberGoal} color="#5c9c6e" unit="g" compact />
           </View>
         </View>
 
@@ -297,15 +308,9 @@ export default function NutritionScreen() {
           })
         )}
 
-        {/* ── Macro breakdown ── */}
+        {/* ── Macro split ── */}
+        {(proteinCal + carbsCal + fatCal) > 0 || proteinPerKg ? (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Macros</Text>
-          <MacroBar label="Calories" value={dayCal} goal={calGoal} color={colors.accentDark} unit=" kcal" />
-          <MacroBar label="Protein" value={log?.protein_g ?? 0} goal={proteinGoal} color={colors.accentMid} unit="g" />
-          <MacroBar label="Carbs" value={log?.carbs_g ?? 0} goal={carbsGoal} color="#c98a2e" unit="g" />
-          <MacroBar label="Fat" value={log?.fat_g ?? 0} goal={fatGoal} color="#3d6fb0" unit="g" />
-          <MacroBar label="Fiber" value={log?.fiber_g ?? 0} goal={fiberGoal} color="#5c9c6e" unit="g" />
-
           {(proteinCal + carbsCal + fatCal) > 0 && (
             <View style={styles.splitSection}>
               <View style={styles.splitBar}>
@@ -328,6 +333,7 @@ export default function NutritionScreen() {
             </View>
           )}
         </View>
+        ) : null}
 
         {/* ── Week ── */}
         <View style={styles.card}>
@@ -361,15 +367,18 @@ export default function NutritionScreen() {
   )
 }
 
-function MacroBar({ label, value, goal, color, unit }: { label: string; value: number; goal: number; color: string; unit: string }) {
+function MacroBar({ label, value, goal, color, unit, compact }: { label: string; value: number; goal: number; color: string; unit: string; compact?: boolean }) {
   const pct = Math.min(1, goal > 0 ? value / goal : 0)
   return (
-    <View style={macroStyles.wrap}>
+    <View style={[macroStyles.wrap, compact && macroStyles.wrapCompact]}>
       <View style={macroStyles.row}>
-        <Text style={macroStyles.label}>{label}</Text>
-        <Text style={macroStyles.value}>{value > 0 ? value.toFixed(0) : '—'}<Text style={macroStyles.unit}> / {goal}{unit}</Text></Text>
+        <Text style={[macroStyles.label, compact && macroStyles.labelCompact]}>{label}</Text>
+        <Text style={[macroStyles.value, compact && macroStyles.valueCompact]} numberOfLines={1}>
+          {value > 0 ? value.toFixed(0) : '—'}
+          <Text style={[macroStyles.unit, compact && macroStyles.unitCompact]}>{compact ? unit.trim() : ` / ${goal}${unit}`}</Text>
+        </Text>
       </View>
-      <View style={macroStyles.track}>
+      <View style={[macroStyles.track, compact && macroStyles.trackCompact]}>
         <View style={[macroStyles.fill, { width: `${Math.round(pct * 100)}%`, backgroundColor: color }]} />
       </View>
     </View>
@@ -378,11 +387,16 @@ function MacroBar({ label, value, goal, color, unit }: { label: string; value: n
 
 const macroStyles = StyleSheet.create({
   wrap: { marginBottom: 12 },
+  wrapCompact: { marginBottom: 9 },
   row: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
   label: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.xs },
+  labelCompact: { fontSize: 10 },
   value: { color: colors.textPrimary, fontFamily: fonts.monoSemiBold, fontSize: fs.xs },
+  valueCompact: { fontSize: 10 },
   unit: { color: colors.textMuted, fontFamily: fonts.mono, fontSize: fs.xs },
+  unitCompact: { fontSize: 9 },
   track: { height: 5, backgroundColor: colors.surfaceInput, borderRadius: 3, overflow: 'hidden' },
+  trackCompact: { height: 4 },
   fill: { height: '100%', borderRadius: 3 },
 })
 
@@ -458,17 +472,24 @@ const styles = StyleSheet.create({
   dateBannerText: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.xs },
   dateBannerLink: { color: colors.accentMid, fontFamily: fonts.sansSemiBold, fontSize: fs.xs },
 
+  topRow: { flexDirection: 'row', gap: sp.sm, marginBottom: sp.md, alignItems: 'stretch' },
   ringsCard: {
+    flexBasis: '60%', flexGrow: 0,
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
-    borderRadius: r.lg, padding: sp.md, marginBottom: sp.md,
+    borderRadius: r.lg, padding: sp.sm, alignItems: 'center',
   },
-  ringsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' },
+  ringsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: sp.md, marginTop: sp.sm },
   waterRow: { flexDirection: 'row', justifyContent: 'center', gap: 8, marginTop: sp.sm },
   waterChip: {
-    paddingHorizontal: 14, paddingVertical: 6, borderRadius: r.full,
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: r.full,
     backgroundColor: colors.surfaceInput, borderWidth: 1, borderColor: colors.border,
   },
   waterChipText: { color: '#3d6fb0', fontFamily: fonts.sansSemiBold, fontSize: fs.xs },
+  macrosCard: {
+    flex: 1,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    borderRadius: r.lg, padding: sp.sm,
+  },
 
   emptyCard: {
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
