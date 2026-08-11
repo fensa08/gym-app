@@ -39,6 +39,12 @@ export default function AddFoodModal() {
   const [meal, setMeal] = useState(mealForNow())
   const [flash, setFlash] = useState<string | null>(null)
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [selection, setSelection] = useState<{ type: 'food'; food: Food } | { type: 'kcal' } | null>(null)
+
+  function handleQueryChange(text: string) {
+    setQuery(text)
+    setSelection(null)
+  }
 
   useEffect(() => {
     getFoods().then(setFoods)
@@ -68,19 +74,19 @@ export default function AddFoodModal() {
     return foods.filter(f => f.name.toLowerCase().includes(parsed.text)).slice(0, 8)
   }, [foods, parsed])
 
-  async function logFood(food: Food) {
-    const grams = parsed.grams ?? food.last_grams ?? 100
+  async function confirmAdd() {
+    if (!selection) return
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-    await addFoodToMeal(meal, food, grams, date)
+    if (selection.type === 'food') {
+      const grams = parsed.grams ?? selection.food.last_grams ?? 100
+      await addFoodToMeal(meal, selection.food, grams, date)
+      showFlash(`✓ ${selection.food.name} · ${grams}g → ${meal}`)
+    } else if (parsed.kcal != null) {
+      await addQuickItem(meal, { calories: parsed.kcal }, date)
+      showFlash(`✓ ${parsed.kcal} kcal → ${meal}`)
+    }
     setQuery('')
-    showFlash(`✓ ${food.name} · ${grams}g → ${meal}`)
-  }
-
-  async function logQuickKcal(kcal: number) {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-    await addQuickItem(meal, { calories: kcal }, date)
-    setQuery('')
-    showFlash(`✓ ${kcal} kcal → ${meal}`)
+    setSelection(null)
   }
 
   return (
@@ -100,16 +106,23 @@ export default function AddFoodModal() {
             ref={inputRef}
             style={styles.searchInput}
             value={query}
-            onChangeText={setQuery}
+            onChangeText={handleQueryChange}
             placeholder="Log food… (e.g. chicken 180, or 450 for kcal)"
             placeholderTextColor={colors.textMuted}
             returnKeyType="done"
           />
           {query.length > 0 && (
-            <TouchableOpacity onPress={() => setQuery('')}>
+            <TouchableOpacity onPress={() => { setQuery(''); setSelection(null) }}>
               <Ionicons name="close-circle" size={16} color={colors.textMuted} />
             </TouchableOpacity>
           )}
+          <TouchableOpacity
+            style={[styles.addBtn, !selection && styles.addBtnDisabled]}
+            disabled={!selection}
+            onPress={confirmAdd}
+          >
+            <Text style={[styles.addBtnText, !selection && styles.addBtnTextDisabled]}>Add food</Text>
+          </TouchableOpacity>
         </View>
 
         {flash && <Text style={styles.flashText}>{flash}</Text>}
@@ -128,20 +141,28 @@ export default function AddFoodModal() {
 
         <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%' }} keyboardShouldPersistTaps="handled">
           {parsed.kcal != null ? (
-            <TouchableOpacity style={styles.resultRow} onPress={() => logQuickKcal(parsed.kcal!)}>
+            <TouchableOpacity
+              style={[styles.resultRow, selection?.type === 'kcal' && styles.resultRowSelected]}
+              onPress={() => setSelection({ type: 'kcal' })}
+            >
               <Text style={styles.resultName}>⚡ Quick add {parsed.kcal} kcal</Text>
               <Text style={styles.resultMacro}>→ {meal}</Text>
             </TouchableOpacity>
           ) : (
             <>
               {!parsed.text && suggestions.length > 0 && (
-                <Text style={styles.panelHint}>Recent — tap to log</Text>
+                <Text style={styles.panelHint}>Recent — tap to select, then Add food</Text>
               )}
               {suggestions.map(f => {
                 const grams = parsed.grams ?? f.last_grams ?? 100
                 const kcal = Math.round((f.calories_per_100g * grams) / 100)
+                const isSelected = selection?.type === 'food' && selection.food.id === f.id
                 return (
-                  <TouchableOpacity key={f.id} style={styles.resultRow} onPress={() => logFood(f)}>
+                  <TouchableOpacity
+                    key={f.id}
+                    style={[styles.resultRow, isSelected && styles.resultRowSelected]}
+                    onPress={() => setSelection({ type: 'food', food: f })}
+                  >
                     <Text style={styles.resultName} numberOfLines={1}>{f.name}</Text>
                     <Text style={styles.resultMacro}>{grams}g · {kcal} kcal</Text>
                   </TouchableOpacity>
@@ -199,12 +220,20 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, color: colors.textPrimary, fontFamily: fonts.sansMedium, fontSize: fs.sm, padding: 0 },
   flashText: { color: colors.accentMid, fontFamily: fonts.sansSemiBold, fontSize: fs.xs, marginTop: 8, alignSelf: 'flex-start' },
 
+  addBtn: {
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: r.full,
+    backgroundColor: colors.accentLime,
+  },
+  addBtnDisabled: { backgroundColor: colors.surfaceInput },
+  addBtnText: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.xs },
+  addBtnTextDisabled: { color: colors.textMuted },
+
   mealChipRow: { flexDirection: 'row', gap: 6, width: '100%', marginTop: sp.md, marginBottom: sp.sm },
   mealChip: {
     flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: r.full,
     backgroundColor: colors.surfaceInput, borderWidth: 1, borderColor: colors.border,
   },
-  mealChipActive: { backgroundColor: colors.accentDark, borderColor: colors.accentDark },
+  mealChipActive: { backgroundColor: colors.accentLime, borderColor: colors.accentLime },
   mealChipText: { color: colors.textSecondary, fontFamily: fonts.sansMedium, fontSize: fs.xs },
   mealChipTextActive: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold },
 
@@ -212,6 +241,10 @@ const styles = StyleSheet.create({
   resultRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8,
     paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  resultRowSelected: {
+    backgroundColor: colors.surfaceGreen, borderBottomColor: colors.accentLime,
+    marginHorizontal: -sp.md, paddingHorizontal: sp.md, borderRadius: r.md,
   },
   resultName: { color: colors.textPrimary, fontFamily: fonts.sansMedium, fontSize: fs.sm, flexShrink: 1 },
   resultMacro: { color: colors.textMuted, fontFamily: fonts.mono, fontSize: fs.xs },

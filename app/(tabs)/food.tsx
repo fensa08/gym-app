@@ -165,7 +165,7 @@ export default function NutritionScreen() {
           </TouchableOpacity>
           <TouchableOpacity style={styles.addCta} onPress={() => router.push({ pathname: '/nutrition/add-food', params: { date: selectedDate } })}>
             <Ionicons name="add" size={18} color={colors.textPrimary} />
-            <Text style={styles.addCtaText}>Add food</Text>
+            <Text style={styles.addCtaText}>Log food</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -446,7 +446,7 @@ const styles = StyleSheet.create({
   addCta: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
     height: 36, paddingHorizontal: 12, borderRadius: 18,
-    backgroundColor: colors.accentDark, borderWidth: 1, borderColor: colors.accentDark,
+    backgroundColor: colors.accentLime, borderWidth: 1, borderColor: colors.accentLime,
   },
   addCtaText: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.xs },
 
