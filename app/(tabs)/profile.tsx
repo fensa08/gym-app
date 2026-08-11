@@ -1,10 +1,12 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
+import { Ionicons } from '@expo/vector-icons'
 import { useState, useCallback } from 'react'
-import { useFocusEffect } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { getRecentWorkouts, getAllPRs, getWorkoutStreak } from '../../lib/firestore/queries'
+import { getUserGoals } from '../../lib/firestore/queriesHealth'
 import { isHealthKitConnected, connectHealthKit, disconnectHealthKit } from '../../lib/healthkitSync'
 import { useAuthStore } from '../../lib/store/auth'
 
@@ -13,11 +15,11 @@ const SETTINGS: { label: string; value: string; badge?: boolean }[] = [
   { label: 'Default Rest Timer', value: '90s' },
   { label: 'Notifications', value: 'On' },
   { label: 'Form Check (Camera)', value: '', badge: true },
-  { label: 'Nutrition Tracking', value: '', badge: true },
   { label: 'Activity Monitor', value: '', badge: true },
 ]
 
 export default function ProfileScreen() {
+  const router = useRouter()
   const signOut = useAuthStore((s) => s.signOut)
   const [workoutCount, setWorkoutCount] = useState(0)
   const [prCount, setPrCount] = useState(0)
@@ -25,6 +27,7 @@ export default function ProfileScreen() {
   const [hkConnected, setHkConnected] = useState(false)
   const [hkBusy, setHkBusy] = useState(false)
   const [signOutBusy, setSignOutBusy] = useState(false)
+  const [calorieGoal, setCalorieGoal] = useState<number | null>(null)
 
   useFocusEffect(
     useCallback(() => {
@@ -33,16 +36,18 @@ export default function ProfileScreen() {
   )
 
   async function loadData() {
-    const [ws, prs, s, connected] = await Promise.all([
+    const [ws, prs, s, connected, goals] = await Promise.all([
       getRecentWorkouts(1000),
       getAllPRs(),
       getWorkoutStreak(),
       isHealthKitConnected(),
+      getUserGoals(),
     ])
     setWorkoutCount(ws.length)
     setPrCount(prs.length)
     setStreak(s)
     setHkConnected(connected)
+    setCalorieGoal(goals.calorie_goal)
   }
 
   async function toggleHealthKit() {
@@ -111,6 +116,19 @@ export default function ProfileScreen() {
               </View>
             </TouchableOpacity>
           )}
+          <TouchableOpacity
+            style={[styles.settingRow, styles.settingRowBorder]}
+            onPress={() => router.push('/nutrition/goals')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.settingLabel}>Nutrition Goals</Text>
+            <View style={styles.settingRight}>
+              <Text style={styles.settingValue}>
+                {calorieGoal != null ? `${calorieGoal.toLocaleString()} kcal` : '...'}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+            </View>
+          </TouchableOpacity>
           {SETTINGS.map((s, i) => (
             <View key={s.label} style={[styles.settingRow, i < SETTINGS.length - 1 && styles.settingRowBorder]}>
               <Text style={styles.settingLabel}>{s.label}</Text>

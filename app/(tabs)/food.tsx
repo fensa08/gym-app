@@ -1,6 +1,6 @@
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Keyboard } from 'react-native'
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput } from 'react-native'
 import { useRouter, useFocusEffect } from 'expo-router'
-import { useState, useCallback, useMemo, useRef } from 'react'
+import { useState, useCallback } from 'react'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import * as Haptics from 'expo-haptics'
@@ -15,13 +15,10 @@ import {
   getMaintenanceCalibration,
   upsertNutritionLog,
   getLatestBodyWeight,
-  getFoods,
-  addFoodToMeal,
-  addQuickItem,
   removeMealItem,
   updateMealItemGrams,
 } from '../../lib/firestore/queriesHealth'
-import type { NutritionLog, UserGoals, Food } from '../../lib/types'
+import type { NutritionLog, UserGoals } from '../../lib/types'
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const MEAL_ORDER = ['Breakfast', 'Lunch', 'Snack', 'Dinner']
@@ -30,31 +27,12 @@ function iso(d: Date): string {
   return d.toISOString().slice(0, 10)
 }
 
-function mealForNow(): string {
-  const h = new Date().getHours()
-  if (h >= 5 && h < 11) return 'Breakfast'
-  if (h >= 11 && h < 15) return 'Lunch'
-  if (h >= 17 && h < 21) return 'Dinner'
-  return 'Snack'
-}
-
-// "chicken 180" → { text: "chicken", grams: 180 } · "450" → { kcal: 450 }
-function parseQuery(raw: string): { text: string; grams: number | null; kcal: number | null } {
-  const q = raw.trim()
-  if (/^\d+(\.\d+)?$/.test(q)) return { text: '', grams: null, kcal: Math.round(parseFloat(q)) }
-  const m = q.match(/^(.*\S)\s+(\d+(?:\.\d+)?)$/)
-  if (m) return { text: m[1].toLowerCase(), grams: parseFloat(m[2]), kcal: null }
-  return { text: q.toLowerCase(), grams: null, kcal: null }
-}
-
 export default function NutritionScreen() {
   const router = useRouter()
-  const searchRef = useRef<TextInput>(null)
 
   const [selectedDate, setSelectedDate] = useState(iso(new Date()))
   const [log, setLog] = useState<NutritionLog | null>(null)
   const [goals, setGoals] = useState<UserGoals | null>(null)
-  const [foods, setFoods] = useState<Food[]>([])
   const [weekLogs, setWeekLogs] = useState<NutritionLog[]>([])
   const [averages, setAverages] = useState<{
     avgCalories: number | null; avgProtein: number | null
@@ -64,13 +42,6 @@ export default function NutritionScreen() {
     avgIntake: number; weightChangePerWeek: number; daysLogged: number
   } | null>(null)
   const [latestWeightKg, setLatestWeightKg] = useState<number | null>(null)
-
-  const [query, setQuery] = useState('')
-  const [meal, setMeal] = useState(mealForNow())
-  const [searchFocused, setSearchFocused] = useState(false)
-  const [flash, setFlash] = useState<string | null>(null)
-  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [editing, setEditing] = useState<{ mealId: string; itemId: string } | null>(null)
   const [editGrams, setEditGrams] = useState('')
@@ -82,10 +53,9 @@ export default function NutritionScreen() {
   )
 
   async function loadData(date: string) {
-    const [g, l, f, week, avgs, cal, w] = await Promise.all([
+    const [g, l, week, avgs, cal, w] = await Promise.all([
       getUserGoals(),
       getNutritionLog(date),
-      getFoods(),
       getNutritionLogs(7),
       getNutritionAverages(7),
       getMaintenanceCalibration(),
@@ -93,55 +63,10 @@ export default function NutritionScreen() {
     ])
     setGoals(g)
     setLog(l)
-    setFoods(f)
     setWeekLogs(week)
     setAverages(avgs)
     setCalibration(cal)
     setLatestWeightKg(w?.weight_kg ?? null)
-  }
-
-  function showFlash(message: string) {
-    if (flashTimer.current) clearTimeout(flashTimer.current)
-    setFlash(message)
-    flashTimer.current = setTimeout(() => setFlash(null), 2200)
-  }
-
-  // ── Search & logging ─────────────────────────────────────────────
-
-  const parsed = useMemo(() => parseQuery(query), [query])
-
-  const suggestions = useMemo(() => {
-    if (parsed.kcal != null) return []
-    if (!parsed.text) {
-      // recents first: frequency, then recency, then the rest of the library
-      return [...foods]
-        .sort((a, b) =>
-          (b.use_count ?? 0) - (a.use_count ?? 0) ||
-          (b.last_used_at ?? 0) - (a.last_used_at ?? 0) ||
-          a.name.localeCompare(b.name)
-        )
-        .slice(0, 8)
-    }
-    return foods.filter(f => f.name.toLowerCase().includes(parsed.text)).slice(0, 8)
-  }, [foods, parsed])
-
-  const showPanel = searchFocused || query.trim().length > 0
-
-  async function logFood(food: Food) {
-    const grams = parsed.grams ?? food.last_grams ?? 100
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-    await addFoodToMeal(meal, food, grams, selectedDate)
-    setQuery('')
-    showFlash(`✓ ${food.name} · ${grams}g → ${meal}`)
-    loadData(selectedDate)
-  }
-
-  async function logQuickKcal(kcal: number) {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-    await addQuickItem(meal, { calories: kcal }, selectedDate)
-    setQuery('')
-    showFlash(`✓ ${kcal} kcal → ${meal}`)
-    loadData(selectedDate)
   }
 
   // ── Item editing ────────────────────────────────────────────────
@@ -238,100 +163,11 @@ export default function NutritionScreen() {
           <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/nutrition/foods')}>
             <Ionicons name="library-outline" size={18} color={colors.textPrimary} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.addCta} onPress={() => searchRef.current?.focus()}>
+          <TouchableOpacity style={styles.addCta} onPress={() => router.push({ pathname: '/nutrition/add-food', params: { date: selectedDate } })}>
             <Ionicons name="add" size={18} color={colors.textPrimary} />
             <Text style={styles.addCtaText}>Add food</Text>
           </TouchableOpacity>
         </View>
-      </View>
-
-      {/* ── Smart search bar: the single logging entry point ── */}
-      <View style={styles.searchWrap}>
-        <View style={styles.searchBar}>
-          <Ionicons name="search" size={16} color={colors.textMuted} />
-          <TextInput
-            ref={searchRef}
-            style={styles.searchInput}
-            value={query}
-            onChangeText={setQuery}
-            onFocus={() => {
-              if (blurTimer.current) clearTimeout(blurTimer.current)
-              setSearchFocused(true)
-            }}
-            onBlur={() => {
-              // delay so a tap on a panel row (recent food, meal chip) can register
-              // before the panel unmounts — TextInput blur otherwise wins the race
-              blurTimer.current = setTimeout(() => setSearchFocused(false), 150)
-            }}
-            placeholder="Log food… (e.g. chicken 180, or 450 for kcal)"
-            placeholderTextColor={colors.textMuted}
-            returnKeyType="done"
-          />
-          {query.length > 0 && (
-            <TouchableOpacity onPress={() => setQuery('')}>
-              <Ionicons name="close-circle" size={16} color={colors.textMuted} />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {flash && !showPanel && <Text style={styles.flashText}>{flash}</Text>}
-
-        {showPanel && (
-          <View style={styles.panel}>
-            <View style={styles.mealChipRow}>
-              {MEAL_ORDER.map(m => (
-                <TouchableOpacity
-                  key={m}
-                  style={[styles.mealChip, meal === m && styles.mealChipActive]}
-                  onPress={() => setMeal(m)}
-                >
-                  <Text style={[styles.mealChipText, meal === m && styles.mealChipTextActive]}>{m}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            {parsed.kcal != null ? (
-              <TouchableOpacity style={styles.resultRow} onPress={() => logQuickKcal(parsed.kcal!)}>
-                <Text style={styles.resultName}>⚡ Quick add {parsed.kcal} kcal</Text>
-                <Text style={styles.resultMacro}>→ {meal}</Text>
-              </TouchableOpacity>
-            ) : (
-              <>
-                {!parsed.text && suggestions.length > 0 && (
-                  <Text style={styles.panelHint}>Recent — tap to log</Text>
-                )}
-                {suggestions.map(f => {
-                  const grams = parsed.grams ?? f.last_grams ?? 100
-                  const kcal = Math.round((f.calories_per_100g * grams) / 100)
-                  return (
-                    <TouchableOpacity key={f.id} style={styles.resultRow} onPress={() => logFood(f)}>
-                      <Text style={styles.resultName} numberOfLines={1}>{f.name}</Text>
-                      <Text style={styles.resultMacro}>{grams}g · {kcal} kcal</Text>
-                    </TouchableOpacity>
-                  )
-                })}
-                {parsed.text.length > 0 && suggestions.length === 0 && (
-                  <TouchableOpacity
-                    style={styles.resultRow}
-                    onPress={() => {
-                      Keyboard.dismiss()
-                      router.push({ pathname: '/nutrition/food-edit', params: { name: query.trim() } })
-                    }}
-                  >
-                    <Text style={styles.createLink}>+ Create "{query.trim()}"</Text>
-                  </TouchableOpacity>
-                )}
-                {foods.length === 0 && !parsed.text && (
-                  <TouchableOpacity
-                    style={styles.resultRow}
-                    onPress={() => { Keyboard.dismiss(); router.push('/nutrition/food-edit') }}
-                  >
-                    <Text style={styles.createLink}>+ Add your first food</Text>
-                  </TouchableOpacity>
-                )}
-              </>
-            )}
-          </View>
-        )}
       </View>
 
       <ScrollView
@@ -392,7 +228,7 @@ export default function NutritionScreen() {
 
         {/* ── Meals ── */}
         {sortedMeals.length === 0 ? (
-          <TouchableOpacity style={styles.emptyCard} onPress={() => searchRef.current?.focus()}>
+          <TouchableOpacity style={styles.emptyCard} onPress={() => router.push({ pathname: '/nutrition/add-food', params: { date: selectedDate } })}>
             <Text style={styles.emptyTitle}>Nothing logged yet</Text>
             <Text style={styles.emptyText}>Tap here and pick a recent food — one tap logs it.</Text>
           </TouchableOpacity>
@@ -599,42 +435,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentDark, borderWidth: 1, borderColor: colors.accentDark,
   },
   addCtaText: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.xs },
-
-  searchWrap: { paddingHorizontal: sp.md, paddingBottom: sp.sm, zIndex: 10 },
-  searchBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderMed,
-    borderRadius: r.full, paddingHorizontal: sp.md, paddingVertical: 10,
-  },
-  searchInput: { flex: 1, color: colors.textPrimary, fontFamily: fonts.sansMedium, fontSize: fs.sm, padding: 0 },
-  flashText: { color: colors.accentMid, fontFamily: fonts.sansSemiBold, fontSize: fs.xs, marginTop: 6, marginLeft: sp.sm },
-  panel: {
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderMed,
-    borderRadius: r.md, marginTop: 6, overflow: 'hidden',
-  },
-  mealChipRow: {
-    flexDirection: 'row', gap: 6,
-    paddingHorizontal: sp.sm, paddingTop: sp.sm, paddingBottom: 4,
-  },
-  mealChip: {
-    flex: 1, alignItems: 'center', paddingVertical: 6, borderRadius: r.full,
-    backgroundColor: colors.surfaceInput, borderWidth: 1, borderColor: colors.border,
-  },
-  mealChipActive: { backgroundColor: colors.accentDark, borderColor: colors.accentDark },
-  mealChipText: { color: colors.textSecondary, fontFamily: fonts.sansMedium, fontSize: fs.xs },
-  mealChipTextActive: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold },
-  panelHint: {
-    color: colors.textMuted, fontFamily: fonts.sans, fontSize: 10,
-    paddingHorizontal: sp.md, paddingTop: 8, paddingBottom: 2,
-  },
-  resultRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8,
-    paddingHorizontal: sp.md, paddingVertical: 11,
-    borderBottomWidth: 1, borderBottomColor: colors.border,
-  },
-  resultName: { color: colors.textPrimary, fontFamily: fonts.sansMedium, fontSize: fs.sm, flexShrink: 1 },
-  resultMacro: { color: colors.textMuted, fontFamily: fonts.mono, fontSize: fs.xs },
-  createLink: { color: colors.accentMid, fontFamily: fonts.sansSemiBold, fontSize: fs.sm },
 
   content: { padding: sp.md, paddingTop: 0, paddingBottom: 120 },
 
