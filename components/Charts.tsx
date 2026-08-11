@@ -16,6 +16,7 @@ export function LineChart({
   width = 320,
   color = colors.accentMid,
   dashed = false,
+  band,
 }: {
   data?: { x: number; y: number }[]
   series?: LineSeries[]
@@ -23,6 +24,8 @@ export function LineChart({
   width?: number
   color?: string
   dashed?: boolean
+  /** Shaded target range (e.g. protein g/kg 1.6-2.2) drawn as two dashed horizontal lines. */
+  band?: { min: number; max: number; color?: string }
 }) {
   const allSeries: LineSeries[] = series ?? (data ? [{ data, color, dashed, showLastDot: true }] : [])
   const allPoints = allSeries.flatMap((s) => s.data)
@@ -34,8 +37,12 @@ export function LineChart({
     )
   }
   const ys = allPoints.map((d) => d.y)
-  const minY = Math.min(...ys)
-  const maxY = Math.max(...ys)
+  let minY = Math.min(...ys)
+  let maxY = Math.max(...ys)
+  if (band) {
+    minY = Math.min(minY, band.min)
+    maxY = Math.max(maxY, band.max)
+  }
   const pad = (maxY - minY) * 0.05 || 1
   const lo = minY - pad
   const hi = maxY + pad
@@ -49,9 +56,32 @@ export function LineChart({
     const py = height - ((d.y - lo) / (hi - lo)) * height
     return [px, py]
   }
+  const toY = (y: number) => height - ((y - lo) / (hi - lo)) * height
 
   return (
     <Svg width={width} height={height}>
+      {band && (
+        <>
+          <Line
+            x1={0}
+            x2={width}
+            y1={toY(band.max)}
+            y2={toY(band.max)}
+            stroke={band.color ?? colors.borderMed}
+            strokeWidth={1}
+            strokeDasharray="4 4"
+          />
+          <Line
+            x1={0}
+            x2={width}
+            y1={toY(band.min)}
+            y2={toY(band.min)}
+            stroke={band.color ?? colors.borderMed}
+            strokeWidth={1}
+            strokeDasharray="4 4"
+          />
+        </>
+      )}
       {allSeries.map((s, si) => {
         if (s.data.length < 2) return null
         const points = s.data.map(toPoint)
@@ -134,6 +164,68 @@ export function BarChart({
           <Text key={i} style={styles.barLabel}>{d.label}</Text>
         ))}
       </View>
+    </View>
+  )
+}
+
+/**
+ * Daily bars (e.g. nightly sleep, daily calories) with a rolling-average
+ * line overlaid on top. Bars and line share the same category positions
+ * (one per data point), so `lineValue` should already be the caller's
+ * rolling average aligned to the same dates as `value`.
+ */
+export function BarWithLineChart({
+  data,
+  height = 100,
+  width = 320,
+  barColor = colors.accentLime,
+  belowColor = colors.error,
+  lineColor = colors.accentMid,
+}: {
+  data: { value: number; lineValue: number | null; below?: boolean }[]
+  height?: number
+  width?: number
+  barColor?: string
+  belowColor?: string
+  lineColor?: string
+}) {
+  const allValues = data.flatMap((d) => [d.value, d.lineValue ?? 0])
+  const max = Math.max(...allValues, 1)
+  const n = data.length
+  // Matches styles.barsWrap's `gap: 8` flex layout so the line lands on bar centers.
+  const colGap = 8
+  const colWidth = (width - colGap * (n - 1)) / n
+
+  const linePoints = data
+    .map((d, i) => (d.lineValue == null ? null : [
+      i * (colWidth + colGap) + colWidth / 2,
+      height - (d.lineValue / max) * height,
+    ]))
+    .filter((p): p is [number, number] => p != null)
+  const linePath = linePoints.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+
+  return (
+    <View style={{ height, width }}>
+      <View style={[styles.barsWrap, { height, position: 'absolute', left: 0, right: 0 }]}>
+        {data.map((d, i) => {
+          const pct = d.value > 0 ? Math.max(0.03, d.value / max) : 0.02
+          return (
+            <View key={i} style={styles.barCol}>
+              <View
+                style={[
+                  styles.bar,
+                  { height: pct * height, backgroundColor: d.below ? belowColor : barColor },
+                ]}
+              />
+            </View>
+          )
+        })}
+      </View>
+      {linePoints.length >= 2 && (
+        <Svg width={width} height={height}>
+          <Path d={linePath} stroke={lineColor} strokeWidth={2} fill="none" strokeLinejoin="round" strokeLinecap="round" />
+        </Svg>
+      )}
     </View>
   )
 }

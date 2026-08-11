@@ -470,6 +470,18 @@ export async function getNutritionLogs(days = 7): Promise<NutritionLog[]> {
   return snap.docs.map((d, i) => ({ id: i, meals: [], ...d.data() } as unknown as NutritionLog))
 }
 
+export async function getNutritionLogsRange(startDate: string, endDate: string): Promise<NutritionLog[]> {
+  const snap = await getDocs(
+    query(
+      col('nutrition_logs'),
+      where('date', '>=', startDate),
+      where('date', '<=', endDate),
+      orderBy('date')
+    )
+  )
+  return snap.docs.map((d, i) => ({ id: i, meals: [], ...d.data() } as unknown as NutritionLog))
+}
+
 export async function getNutritionStreaks(
   calorieGoal: number
 ): Promise<{ surplusStreak: number; deficitStreak: number }> {

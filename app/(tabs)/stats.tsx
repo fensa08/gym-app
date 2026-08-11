@@ -1,11 +1,24 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useRouter, useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Svg, { Circle } from 'react-native-svg'
+import { Ionicons } from '@expo/vector-icons'
 import { format } from 'date-fns'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
-import { getWeeklyVolume, getAllPRs, getRecentWorkouts, getMonthlyVolume } from '../../lib/firestore/queries'
+import {
+  getWeeklyVolume,
+  getAllPRs,
+  getRecentWorkouts,
+  getMonthlyVolume,
+  getWeeklyVolumeByMuscleGroup,
+  getTrainingFrequencyByMuscleGroup,
+  getExercisesWithHistory,
+  getExerciseHistory,
+  type WeeklyMuscleGroupVolume,
+  type WeeklyMuscleGroupFrequency,
+  type ExerciseHistoryPoint,
+} from '../../lib/firestore/queries'
 import {
   getBodyWeightLogs,
   getBodyCompositionHistory,
@@ -17,8 +30,18 @@ import {
   getMaintenanceCalibration,
 } from '../../lib/firestore/queriesHealth'
 import { computeFFMI, getTopInsight, SIGNAL_COLORS, type SignalColor } from '../../lib/insights'
+import {
+  rollingAverageByDate,
+  proteinPerKgSeries,
+  nightsBelowThreshold,
+  weeklyAverages,
+  classifyTrend,
+  average,
+  TARGET_FREQUENCY_PER_MUSCLE_GROUP,
+  type Trend,
+} from '../../lib/statsAggregation'
 import { CategoryTabRow } from '../../components/CategoryTabRow'
-import { LineChart, DivergingBarChart } from '../../components/Charts'
+import { LineChart, DivergingBarChart, BarWithLineChart, type LineSeries } from '../../components/Charts'
 import { StatChip } from '../../components/Cards'
 import type { BodyWeightLog, BodyCompositionLog, RecoveryLog, NutritionLog } from '../../lib/types'
 
@@ -27,6 +50,34 @@ const BAR_HEIGHT = 100
 const RING_R = 30
 const RING_CIRC = 2 * Math.PI * RING_R
 const MONTHLY_GOAL = 80000
+const SLEEP_THRESHOLD_HOURS = 7
+const PROTEIN_BAND_G_PER_KG = { min: 1.6, max: 2.2 }
+
+const MUSCLE_GROUP_COLORS: Record<string, string> = {
+  Chest: colors.accentLime,
+  Back: colors.accentMid,
+  Legs: colors.accentDark,
+  Shoulders: '#3d6fb0',
+  Biceps: '#c98a2e',
+  Triceps: colors.error,
+  Core: '#8a6fb0',
+}
+
+function trendArrow(trend: Trend): string {
+  return trend === 'up' ? '↑' : trend === 'down' ? '↓' : '→'
+}
+
+function CardHeaderLink({ title, onPress }: { title: string; onPress: () => void }) {
+  return (
+    <View style={styles.cardHeaderRow}>
+      <Text style={styles.cardTitle}>{title}</Text>
+      <TouchableOpacity onPress={onPress} hitSlop={8} style={styles.detailsBtn}>
+        <Text style={styles.detailsBtnText}>Details</Text>
+        <Ionicons name="chevron-forward" size={13} color={colors.accentMid} />
+      </TouchableOpacity>
+    </View>
+  )
+}
 
 type StatsTab = 'training' | 'body' | 'recovery' | 'nutrition' | 'insights'
 const TABS: { key: StatsTab; label: string }[] = [
@@ -48,6 +99,11 @@ export default function StatsScreen() {
   const [sessionsThisWeek, setSessionsThisWeek] = useState(0)
   const [monthlyVol, setMonthlyVol] = useState(0)
   const [prs, setPrs] = useState<{ exercise_name: string; weight_kg: number; reps: number; completed_at: number }[]>([])
+  const [mgVolume, setMgVolume] = useState<WeeklyMuscleGroupVolume[]>([])
+  const [mgFrequency, setMgFrequency] = useState<WeeklyMuscleGroupFrequency[]>([])
+  const [exerciseList, setExerciseList] = useState<{ exerciseId: string; name: string }[]>([])
+  const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null)
+  const [exerciseHistory, setExerciseHistory] = useState<ExerciseHistoryPoint[]>([])
 
   // Body tab state
   const [weights, setWeights] = useState<BodyWeightLog[]>([])
@@ -73,13 +129,25 @@ export default function StatsScreen() {
     }, [])
   )
 
+  useEffect(() => {
+    if (!selectedExerciseId) return
+    getExerciseHistory(selectedExerciseId, 90).then(setExerciseHistory)
+  }, [selectedExerciseId])
+
   async function loadData() {
-    const [volumeRows, allPrs, recent, monthly] = await Promise.all([
+    const [volumeRows, allPrs, recent, monthly, mgVol, mgFreq, exercises] = await Promise.all([
       getWeeklyVolume(),
       getAllPRs(),
       getRecentWorkouts(100),
       getMonthlyVolume(),
+      getWeeklyVolumeByMuscleGroup(5),
+      getTrainingFrequencyByMuscleGroup(5),
+      getExercisesWithHistory(),
     ])
+    setMgVolume(mgVol)
+    setMgFrequency(mgFreq)
+    setExerciseList(exercises)
+    setSelectedExerciseId((prev) => prev ?? exercises[0]?.exerciseId ?? null)
     const today = new Date()
     const monday = new Date(today)
     monday.setDate(today.getDate() - ((today.getDay() + 6) % 7))
@@ -147,12 +215,18 @@ export default function StatsScreen() {
             monthlyVol={monthlyVol}
             monthlyPct={monthlyPct}
             prs={prs}
+            mgVolume={mgVolume}
+            mgFrequency={mgFrequency}
+            exerciseList={exerciseList}
+            selectedExerciseId={selectedExerciseId}
+            onSelectExercise={setSelectedExerciseId}
+            exerciseHistory={exerciseHistory}
           />
         )}
         {tab === 'body' && <BodyTab weights={weights} comps={comps} heightCm={heightCm} />}
         {tab === 'recovery' && <RecoveryTab logs={recoveryLogs} />}
         {tab === 'nutrition' && (
-          <NutritionTab logs={nutritionLogs} calorieGoal={calorieGoal} proteinGoal={proteinGoal} />
+          <NutritionTab logs={nutritionLogs} calorieGoal={calorieGoal} proteinGoal={proteinGoal} weights={weights} />
         )}
         {tab === 'insights' && (
           <InsightsTab
@@ -177,6 +251,12 @@ function TrainingTab({
   monthlyVol,
   monthlyPct,
   prs,
+  mgVolume,
+  mgFrequency,
+  exerciseList,
+  selectedExerciseId,
+  onSelectExercise,
+  exerciseHistory,
 }: {
   range: 'weekly' | 'monthly'
   setRange(r: 'weekly' | 'monthly'): void
@@ -186,6 +266,12 @@ function TrainingTab({
   monthlyVol: number
   monthlyPct: number
   prs: { exercise_name: string; weight_kg: number; reps: number; completed_at: number }[]
+  mgVolume: WeeklyMuscleGroupVolume[]
+  mgFrequency: WeeklyMuscleGroupFrequency[]
+  exerciseList: { exerciseId: string; name: string }[]
+  selectedExerciseId: string | null
+  onSelectExercise(id: string): void
+  exerciseHistory: ExerciseHistoryPoint[]
 }) {
   return (
     <>
@@ -279,7 +365,163 @@ function TrainingTab({
           </View>
         </>
       )}
+
+      <MuscleGroupVolumeCard mgVolume={mgVolume} />
+      <ProgressiveOverloadCard
+        exerciseList={exerciseList}
+        selectedExerciseId={selectedExerciseId}
+        onSelectExercise={onSelectExercise}
+        exerciseHistory={exerciseHistory}
+      />
+      <TrainingFrequencyCard mgFrequency={mgFrequency} />
     </>
+  )
+}
+
+function MuscleGroupVolumeCard({ mgVolume }: { mgVolume: WeeklyMuscleGroupVolume[] }) {
+  if (mgVolume.length === 0) {
+    return (
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Volume by Muscle Group</Text>
+        <Text style={styles.emptyText}>Log workouts to see volume trends per muscle group</Text>
+      </View>
+    )
+  }
+  const groups = Array.from(new Set(mgVolume.flatMap((w) => Object.keys(w.byGroup)))).filter(
+    (g) => g !== 'Custom'
+  )
+  const series: LineSeries[] = groups.map((group) => ({
+    data: mgVolume.map((w) => ({ x: new Date(w.weekStart).getTime(), y: w.byGroup[group] ?? 0 })),
+    color: MUSCLE_GROUP_COLORS[group] ?? colors.textSecondary,
+    showLastDot: true,
+  }))
+
+  const currentWeek = mgVolume[mgVolume.length - 1]?.byGroup ?? {}
+  const prevWeeks = mgVolume.slice(0, -1)
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>Volume by Muscle Group</Text>
+      {series.some((s) => s.data.length >= 2) ? (
+        <LineChart series={series} height={120} />
+      ) : (
+        <Text style={styles.emptyText}>Log a few more weeks to see trends</Text>
+      )}
+      <View style={styles.legendRow}>
+        {groups.map((group) => (
+          <View key={group} style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: MUSCLE_GROUP_COLORS[group] ?? colors.textSecondary }]} />
+            <Text style={styles.legendText}>{group}</Text>
+          </View>
+        ))}
+      </View>
+      <View style={styles.mgTableHeader}>
+        <Text style={styles.mgTableHeaderText}>Group</Text>
+        <Text style={styles.mgTableHeaderText}>This week</Text>
+        <Text style={styles.mgTableHeaderText}>4-wk avg</Text>
+      </View>
+      {groups.map((group) => {
+        const cur = currentWeek[group] ?? 0
+        const prevAvg = average(prevWeeks.map((w) => w.byGroup[group] ?? 0)) ?? 0
+        return (
+          <View key={group} style={styles.mgTableRow}>
+            <Text style={styles.mgTableGroup}>{group}</Text>
+            <Text style={styles.mgTableValue}>{fmtVol(cur)}</Text>
+            <Text style={styles.mgTableValueMuted}>{fmtVol(prevAvg)}</Text>
+          </View>
+        )
+      })}
+    </View>
+  )
+}
+
+function ProgressiveOverloadCard({
+  exerciseList,
+  selectedExerciseId,
+  onSelectExercise,
+  exerciseHistory,
+}: {
+  exerciseList: { exerciseId: string; name: string }[]
+  selectedExerciseId: string | null
+  onSelectExercise(id: string): void
+  exerciseHistory: ExerciseHistoryPoint[]
+}) {
+  if (exerciseList.length === 0) {
+    return (
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Progressive Overload</Text>
+        <Text style={styles.emptyText}>Log workouts to track your top-set progress per exercise</Text>
+      </View>
+    )
+  }
+  const series = exerciseHistory.map((p) => ({ x: new Date(p.date).getTime(), y: Math.round(p.estimated1RM * 10) / 10 }))
+  const latest = exerciseHistory[exerciseHistory.length - 1]
+  const router = useRouter()
+  const selectedName = exerciseList.find((e) => e.exerciseId === selectedExerciseId)?.name
+
+  return (
+    <View style={styles.card}>
+      <CardHeaderLink
+        title="Progressive Overload"
+        onPress={() =>
+          selectedExerciseId &&
+          router.push({
+            pathname: '/stats/[metric]',
+            params: { metric: 'progressive-overload', exerciseId: selectedExerciseId, name: selectedName ?? '' },
+          })
+        }
+      />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.exercisePickerRow}>
+        {exerciseList.map((ex) => {
+          const isActive = ex.exerciseId === selectedExerciseId
+          return (
+            <TouchableOpacity
+              key={ex.exerciseId}
+              style={[styles.exercisePill, isActive && styles.exercisePillActive]}
+              onPress={() => onSelectExercise(ex.exerciseId)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.exercisePillText, isActive && styles.exercisePillTextActive]}>{ex.name}</Text>
+            </TouchableOpacity>
+          )
+        })}
+      </ScrollView>
+      <LineChart data={series} height={120} color={colors.accentMid} />
+      {latest && (
+        <Text style={styles.chartCaption}>
+          Est. 1RM {latest.estimated1RM.toFixed(0)} kg · top set {latest.topWeightKg}kg × {latest.topSetReps}
+        </Text>
+      )}
+    </View>
+  )
+}
+
+function TrainingFrequencyCard({ mgFrequency }: { mgFrequency: WeeklyMuscleGroupFrequency[] }) {
+  const groups = Object.keys(TARGET_FREQUENCY_PER_MUSCLE_GROUP)
+  const currentWeek = mgFrequency[mgFrequency.length - 1]?.byGroup ?? {}
+  const hasData = mgFrequency.length > 0 && Object.keys(currentWeek).length > 0
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>Training Frequency This Week</Text>
+      {!hasData ? (
+        <Text style={styles.emptyText}>Log a workout to see frequency vs target</Text>
+      ) : (
+        groups.map((group) => {
+          const sessions = currentWeek[group] ?? 0
+          const target = TARGET_FREQUENCY_PER_MUSCLE_GROUP[group]
+          const met = sessions >= target
+          return (
+            <View key={group} style={styles.freqRow}>
+              <Text style={styles.freqLabel}>{group}</Text>
+              <Text style={[styles.freqValue, met ? styles.freqValueMet : styles.freqValueBehind]}>
+                {sessions} of {target}
+              </Text>
+            </View>
+          )
+        })
+      )}
+    </View>
   )
 }
 
@@ -314,10 +556,29 @@ function BodyTab({
     .filter((c) => c.body_fat_pct != null)
     .map((c) => ({ x: new Date(c.date).getTime(), y: c.body_fat_pct! }))
 
+  const weeklyWeights = weeklyAverages(weights.map((w) => ({ date: w.date, value: w.weight_kg })))
+  const weeklyWeightSeries = weeklyWeights.map((w) => ({ x: new Date(w.weekStart).getTime(), y: Math.round(w.average * 10) / 10 }))
+  const weightTrend = classifyTrend(weeklyWeights.map((w) => w.average))
+  const router = useRouter()
+
   return (
     <>
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Weight Trend (30d)</Text>
+        <CardHeaderLink title="Weekly Average Weight" onPress={() => router.push('/stats/bodyweight')} />
+        {weeklyWeightSeries.length < 2 ? (
+          <Text style={styles.emptyText}>Log weight across a couple of weeks to see the trend</Text>
+        ) : (
+          <>
+            <LineChart data={weeklyWeightSeries} height={110} />
+            <Text style={styles.chartCaption}>
+              {trendArrow(weightTrend)} {weightTrend} · {weeklyWeightSeries[weeklyWeightSeries.length - 1].y} kg this week
+            </Text>
+          </>
+        )}
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Weight Trend (30d, daily)</Text>
         <LineChart data={weightSeries} height={110} />
       </View>
 
@@ -362,6 +623,29 @@ function RecoveryTab({ logs }: { logs: RecoveryLog[] }) {
   const hrvCurrent = logs.length > 0 ? logs[logs.length - 1].hrv : null
   const hrvAvg30 = avg(hrvValues)
 
+  // Nightly sleep bars with a 7d rolling average line, flagging nights under threshold.
+  const sleepPoints = logs
+    .filter((l): l is RecoveryLog & { sleep_hours: number } => l.sleep_hours != null)
+    .map((l) => ({ date: l.date, value: l.sleep_hours }))
+  const sleepRolling = rollingAverageByDate(sleepPoints, 7)
+  const belowNights = new Set(nightsBelowThreshold(sleepPoints.map((p) => ({ date: p.date, hours: p.value })), SLEEP_THRESHOLD_HOURS))
+  const sleepBarData = sleepPoints.map((p, i) => ({
+    value: p.value,
+    lineValue: sleepRolling[i]?.value ?? null,
+    below: belowNights.has(p.date),
+  }))
+
+  // Resting HR: daily value + 7d rolling average.
+  const hrPoints = logs
+    .filter((l): l is RecoveryLog & { resting_hr: number } => l.resting_hr != null)
+    .map((l) => ({ date: l.date, value: l.resting_hr }))
+  const hrRolling = rollingAverageByDate(hrPoints, 7)
+  const hrSeries: LineSeries[] = [
+    { data: hrPoints.map((p) => ({ x: new Date(p.date).getTime(), y: p.value })), color: colors.borderMed, dashed: true, showLastDot: false },
+    { data: hrRolling.map((p) => ({ x: new Date(p.date).getTime(), y: Math.round(p.value * 10) / 10 })), color: colors.error, showLastDot: true },
+  ]
+  const router = useRouter()
+
   return (
     <>
       <View style={styles.card}>
@@ -369,10 +653,37 @@ function RecoveryTab({ logs }: { logs: RecoveryLog[] }) {
         <LineChart data={readinessSeries} height={110} color={colors.accentMid} />
       </View>
 
+      <View style={styles.card}>
+        <CardHeaderLink title="Sleep (30d)" onPress={() => router.push('/stats/sleep')} />
+        {sleepBarData.length === 0 ? (
+          <Text style={styles.emptyText}>Log sleep to see nightly trends</Text>
+        ) : (
+          <>
+            <BarWithLineChart data={sleepBarData} height={100} />
+            <Text style={styles.chartCaption}>
+              Bars = nightly hours (red = under {SLEEP_THRESHOLD_HOURS}h) · line = 7d avg
+            </Text>
+          </>
+        )}
+      </View>
+
       <View style={styles.statsRow}>
         <StatChip label="Sleep (7d avg)" value={sleep7 != null ? `${sleep7.toFixed(1)}h` : '—'} />
         <StatChip label="Sleep (30d avg)" value={sleep30 != null ? `${sleep30.toFixed(1)}h` : '—'} />
       </View>
+
+      <View style={styles.card}>
+        <CardHeaderLink title="Resting Heart Rate (30d)" onPress={() => router.push('/stats/resting-hr')} />
+        {hrPoints.length < 2 ? (
+          <Text style={styles.emptyText}>Log resting HR to see trends</Text>
+        ) : (
+          <>
+            <LineChart series={hrSeries} height={110} />
+            <Text style={styles.chartCaption}>Faint line = daily · red = 7d avg</Text>
+          </>
+        )}
+      </View>
+
       <View style={styles.statsRow}>
         <StatChip label="HRV (current)" value={hrvCurrent != null ? `${hrvCurrent}ms` : '—'} />
         <StatChip label="HRV (30d avg)" value={hrvAvg30 != null ? `${Math.round(hrvAvg30)}ms` : '—'} />
@@ -386,10 +697,12 @@ function NutritionTab({
   logs,
   calorieGoal,
   proteinGoal,
+  weights,
 }: {
   logs: NutritionLog[]
   calorieGoal: number
   proteinGoal: number
+  weights: BodyWeightLog[]
 }) {
   const diffBars = logs
     .filter((l) => l.calories != null)
@@ -400,8 +713,35 @@ function NutritionTab({
   const adequacyPct =
     loggedProteinDays.length > 0 ? Math.round((hitProteinDays.length / loggedProteinDays.length) * 100) : 0
 
+  // Total daily calories: logged bars + 7d rolling average line.
+  const caloriePoints = logs
+    .filter((l): l is NutritionLog & { calories: number } => l.calories != null)
+    .map((l) => ({ date: l.date, value: l.calories }))
+  const calorieRolling = rollingAverageByDate(caloriePoints, 7)
+  const calorieBarData = caloriePoints.map((p, i) => ({ value: p.value, lineValue: calorieRolling[i]?.value ?? null }))
+
+  // Protein g/kg bodyweight, target band 1.6-2.2.
+  const proteinPerKg = proteinPerKgSeries(
+    logs.map((l) => ({ date: l.date, protein_g: l.protein_g })),
+    weights.map((w) => ({ date: w.date, weight_kg: w.weight_kg }))
+  )
+  const proteinPerKgSeriesData = proteinPerKg.map((p) => ({ x: new Date(p.date).getTime(), y: Math.round(p.gramsPerKg * 100) / 100 }))
+  const router = useRouter()
+
   return (
     <>
+      <View style={styles.card}>
+        <CardHeaderLink title="Total Daily Calories (30d)" onPress={() => router.push('/stats/calories')} />
+        {calorieBarData.length === 0 ? (
+          <Text style={styles.emptyText}>Log meals to see your calorie trend</Text>
+        ) : (
+          <>
+            <BarWithLineChart data={calorieBarData} height={100} />
+            <Text style={styles.chartCaption}>Bars = daily calories · line = 7d rolling average</Text>
+          </>
+        )}
+      </View>
+
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Calorie Surplus / Deficit (30d)</Text>
         {diffBars.length === 0 ? (
@@ -410,6 +750,20 @@ function NutritionTab({
           <DivergingBarChart data={diffBars} height={90} />
         )}
         <Text style={styles.chartCaption}>Above the line = surplus vs goal · below = deficit</Text>
+      </View>
+
+      <View style={styles.card}>
+        <CardHeaderLink title="Protein Intake (g/kg bodyweight)" onPress={() => router.push('/stats/protein-per-kg')} />
+        {proteinPerKgSeriesData.length < 2 ? (
+          <Text style={styles.emptyText}>Log meals and bodyweight to see protein per kg</Text>
+        ) : (
+          <>
+            <LineChart data={proteinPerKgSeriesData} height={110} color={colors.accentMid} band={PROTEIN_BAND_G_PER_KG} />
+            <Text style={styles.chartCaption}>
+              Dashed lines = target band {PROTEIN_BAND_G_PER_KG.min}–{PROTEIN_BAND_G_PER_KG.max} g/kg
+            </Text>
+          </>
+        )}
       </View>
 
       <View style={styles.card}>
@@ -571,4 +925,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   viewAllBtnText: { color: '#fff', fontFamily: fonts.sansSemiBold, fontSize: fs.sm },
+  legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: sp.sm },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { color: colors.textSecondary, fontFamily: fonts.sansMedium, fontSize: 10 },
+  mgTableHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: sp.md,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  mgTableHeaderText: { flex: 1, color: colors.textSecondary, fontFamily: fonts.sansSemiBold, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
+  mgTableRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
+  mgTableGroup: { flex: 1, color: colors.textPrimary, fontFamily: fonts.sansMedium, fontSize: fs.sm },
+  mgTableValue: { flex: 1, color: colors.textPrimary, fontFamily: fonts.monoSemiBold, fontSize: fs.sm },
+  mgTableValueMuted: { flex: 1, color: colors.textSecondary, fontFamily: fonts.mono, fontSize: fs.sm },
+  exercisePickerRow: { gap: 8, paddingBottom: sp.md },
+  exercisePill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: r.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceInput,
+  },
+  exercisePillActive: { backgroundColor: colors.accentLime, borderColor: colors.accentLime },
+  exercisePillText: { color: colors.textSecondary, fontFamily: fonts.sansMedium, fontSize: fs.xs },
+  exercisePillTextActive: { color: colors.textPrimary },
+  freqRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
+  freqLabel: { color: colors.textPrimary, fontFamily: fonts.sansMedium, fontSize: fs.sm },
+  freqValue: { fontFamily: fonts.monoSemiBold, fontSize: fs.sm },
+  freqValueMet: { color: colors.accentMid },
+  freqValueBehind: { color: colors.error },
+  cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: sp.md },
+  detailsBtn: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  detailsBtnText: { color: colors.accentMid, fontFamily: fonts.sansSemiBold, fontSize: fs.xs },
 })

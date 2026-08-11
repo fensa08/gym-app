@@ -163,6 +163,9 @@ export default function NutritionScreen() {
           <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/nutrition/foods')}>
             <Ionicons name="library-outline" size={18} color={colors.textPrimary} />
           </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/nutrition/export')}>
+            <Ionicons name="share-outline" size={18} color={colors.textPrimary} />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.addCta} onPress={() => router.push({ pathname: '/nutrition/add-food', params: { date: selectedDate } })}>
             <Ionicons name="add" size={18} color={colors.textPrimary} />
             <Text style={styles.addCtaText}>Log food</Text>

@@ -4,6 +4,7 @@ import {
 } from 'firebase/firestore'
 import { db, auth } from '../firebase'
 import type { Exercise, Workout } from '../types'
+import { estimate1RM, isoWeekStart } from '../statsAggregation'
 
 function uid(): string {
   const user = auth.currentUser
@@ -321,6 +322,130 @@ export async function getWorkoutHistoryWithStats(limitN = 30) {
     }
     return { id: d.id, name: data.name, started_at: data.started_at, finished_at: data.finished_at, exercise_count: exercises.length, set_count, volume }
   })
+}
+
+// ── Stats: volume & frequency per muscle group ──────────────────────
+export interface WeeklyMuscleGroupVolume {
+  weekStart: string // Monday, ISO date
+  byGroup: Record<string, number>
+}
+
+export async function getWeeklyVolumeByMuscleGroup(weeksBack = 5): Promise<WeeklyMuscleGroupVolume[]> {
+  const since = new Date()
+  since.setDate(since.getDate() - weeksBack * 7)
+  const [workoutsSnap, exercises] = await Promise.all([
+    getDocs(query(col('workouts'), where('started_at', '>=', since.getTime()), orderBy('started_at'))),
+    getAllExercises(),
+  ])
+  const groupById = new Map(exercises.map((e) => [e.id, e.muscle_group]))
+  const byWeek = new Map<string, Record<string, number>>()
+  for (const d of workoutsSnap.docs) {
+    const data = d.data()
+    const dateStr = new Date(data.started_at).toISOString().slice(0, 10)
+    const weekStart = isoWeekStart(dateStr)
+    const groupVols = byWeek.get(weekStart) ?? {}
+    for (const ex of data.exercises || []) {
+      const group = groupById.get(ex.exerciseId) ?? 'Custom'
+      for (const s of ex.sets || []) {
+        if (s.completed && s.weight_kg != null && s.reps != null) {
+          groupVols[group] = (groupVols[group] ?? 0) + s.weight_kg * s.reps
+        }
+      }
+    }
+    byWeek.set(weekStart, groupVols)
+  }
+  return Array.from(byWeek.entries())
+    .map(([weekStart, byGroup]) => ({ weekStart, byGroup }))
+    .sort((a, b) => a.weekStart.localeCompare(b.weekStart))
+}
+
+export interface WeeklyMuscleGroupFrequency {
+  weekStart: string
+  byGroup: Record<string, number> // distinct days that muscle group was trained
+}
+
+export async function getTrainingFrequencyByMuscleGroup(weeksBack = 5): Promise<WeeklyMuscleGroupFrequency[]> {
+  const since = new Date()
+  since.setDate(since.getDate() - weeksBack * 7)
+  const [snap, exercises] = await Promise.all([
+    getDocs(query(col('workouts'), where('started_at', '>=', since.getTime()), orderBy('started_at'))),
+    getAllExercises(),
+  ])
+  const groupById = new Map(exercises.map((e) => [e.id, e.muscle_group]))
+  // weekStart -> set of "day|group" so a group trained twice in one day only counts once
+  const trainedDays = new Map<string, Set<string>>()
+  for (const d of snap.docs) {
+    const data = d.data()
+    const dateStr = new Date(data.started_at).toISOString().slice(0, 10)
+    const weekStart = isoWeekStart(dateStr)
+    const groupsToday = new Set<string>()
+    for (const ex of data.exercises || []) {
+      const group = groupById.get(ex.exerciseId) ?? 'Custom'
+      if ((ex.sets || []).some((s: any) => s.completed)) groupsToday.add(group)
+    }
+    const set = trainedDays.get(weekStart) ?? new Set<string>()
+    for (const g of groupsToday) set.add(`${dateStr}|${g}`)
+    trainedDays.set(weekStart, set)
+  }
+  return Array.from(trainedDays.entries())
+    .map(([weekStart, daySet]) => {
+      const byGroup: Record<string, number> = {}
+      for (const entry of daySet) {
+        const group = entry.split('|')[1]
+        byGroup[group] = (byGroup[group] ?? 0) + 1
+      }
+      return { weekStart, byGroup }
+    })
+    .sort((a, b) => a.weekStart.localeCompare(b.weekStart))
+}
+
+// ── Stats: progressive overload ──────────────────────────────────────
+export interface ExerciseHistoryPoint {
+  date: string
+  topWeightKg: number
+  topSetReps: number
+  estimated1RM: number
+}
+
+export async function getExerciseHistory(exerciseId: string, days = 90): Promise<ExerciseHistoryPoint[]> {
+  const since = Date.now() - days * 86400000
+  const snap = await getDocs(
+    query(col('workouts'), where('started_at', '>=', since), orderBy('started_at'))
+  )
+  const points: ExerciseHistoryPoint[] = []
+  for (const d of snap.docs) {
+    const data = d.data()
+    const ex = (data.exercises || []).find((e: any) => e.exerciseId === exerciseId)
+    if (!ex) continue
+    let top: { weight: number; reps: number } | null = null
+    for (const s of ex.sets || []) {
+      if (s.completed && s.weight_kg != null && s.reps != null) {
+        if (!top || s.weight_kg > top.weight) top = { weight: s.weight_kg, reps: s.reps }
+      }
+    }
+    if (top) {
+      points.push({
+        date: new Date(data.started_at).toISOString().slice(0, 10),
+        topWeightKg: top.weight,
+        topSetReps: top.reps,
+        estimated1RM: estimate1RM(top.weight, top.reps),
+      })
+    }
+  }
+  return points
+}
+
+export async function getExercisesWithHistory(limitWorkouts = 50): Promise<{ exerciseId: string; name: string }[]> {
+  const snap = await getDocs(
+    query(col('workouts'), where('finished_at', '>', 0), orderBy('finished_at', 'desc'), limit(limitWorkouts))
+  )
+  const seen = new Map<string, string>()
+  for (const d of snap.docs) {
+    for (const ex of d.data().exercises || []) {
+      if (!seen.has(ex.exerciseId)) seen.set(ex.exerciseId, ex.exercise_name || ex.exerciseId)
+    }
+  }
+  return Array.from(seen.entries()).map(([exerciseId, name]) => ({ exerciseId, name }))
 }
 
 export async function getMonthlyVolume(): Promise<number> {
