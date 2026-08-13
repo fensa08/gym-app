@@ -139,7 +139,7 @@ export default function AddFoodModal() {
           ))}
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%' }} keyboardShouldPersistTaps="handled">
+        <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%', flex: 1 }} keyboardShouldPersistTaps="handled">
           {parsed.kcal != null ? (
             <TouchableOpacity
               style={[styles.resultRow, selection?.type === 'kcal' && styles.resultRowSelected]}
@@ -203,7 +203,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: r.xl,
     padding: sp.md,
     alignItems: 'center',
-    maxHeight: '85%',
+    height: '85%',
   },
   handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.borderMed, marginBottom: sp.md },
   titleRow: {
