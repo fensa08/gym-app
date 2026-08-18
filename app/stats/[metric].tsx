@@ -6,16 +6,15 @@ import { Ionicons } from '@expo/vector-icons'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { getBodyWeightLogs, getRecoveryLogs, getNutritionLogs } from '../../lib/firestore/queriesHealth'
 import { getExerciseHistory } from '../../lib/firestore/queries'
-import { rollingAverageByDate, proteinPerKgSeries } from '../../lib/statsAggregation'
+import {
+  rollingAverageByDate,
+  rollingAverageIndexed,
+  proteinPerKgSeries,
+  groupByPeriod,
+  GRANULARITY_OPTIONS,
+  type Granularity,
+} from '../../lib/statsAggregation'
 import { LineChart, BarWithLineChart } from '../../components/Charts'
-
-type RangeKey = '7d' | '30d' | '90d' | 'all'
-const RANGES: { key: RangeKey; label: string; days: number }[] = [
-  { key: '7d', label: '7D', days: 7 },
-  { key: '30d', label: '30D', days: 30 },
-  { key: '90d', label: '90D', days: 90 },
-  { key: 'all', label: 'All', days: 3650 },
-]
 
 const METRIC_TITLES: Record<string, string> = {
   bodyweight: 'Bodyweight',
@@ -29,47 +28,54 @@ const METRIC_TITLES: Record<string, string> = {
 export default function StatDetailScreen() {
   const { metric, exerciseId, name } = useLocalSearchParams<{ metric: string; exerciseId?: string; name?: string }>()
   const router = useRouter()
-  const [range, setRange] = useState<RangeKey>('30d')
+  const [granularity, setGranularity] = useState<Granularity>('week')
   const [loading, setLoading] = useState(true)
   const [lineData, setLineData] = useState<{ x: number; y: number }[]>([])
   const [barData, setBarData] = useState<{ value: number; lineValue: number | null }[] | null>(null)
 
-  const days = RANGES.find((r) => r.key === range)!.days
+  const days = GRANULARITY_OPTIONS.find((g) => g.key === granularity)!.days
 
   const load = useCallback(async () => {
     setLoading(true)
     setBarData(null)
     if (metric === 'bodyweight') {
       const logs = await getBodyWeightLogs(days)
-      setLineData(logs.map((l) => ({ x: new Date(l.date).getTime(), y: l.weight_kg })))
+      const grouped = groupByPeriod(logs.map((l) => ({ date: l.date, value: l.weight_kg })), granularity)
+      setLineData(grouped.map((p) => ({ x: new Date(p.date).getTime(), y: Math.round(p.value * 10) / 10 })))
     } else if (metric === 'calories') {
       const logs = await getNutritionLogs(days)
       const points = logs.filter((l): l is typeof l & { calories: number } => l.calories != null).map((l) => ({ date: l.date, value: l.calories }))
-      const rolling = rollingAverageByDate(points, 7)
-      setBarData(points.map((p, i) => ({ value: p.value, lineValue: rolling[i]?.value ?? null })))
+      const grouped = groupByPeriod(points, granularity)
+      const rolling = granularity === 'day' ? rollingAverageByDate(grouped, 7) : rollingAverageIndexed(grouped, 3)
+      setBarData(grouped.map((p, i) => ({ value: p.value, lineValue: rolling[i]?.value ?? null })))
     } else if (metric === 'protein-per-kg') {
       const [logs, weights] = await Promise.all([getNutritionLogs(days), getBodyWeightLogs(days)])
       const series = proteinPerKgSeries(
         logs.map((l) => ({ date: l.date, protein_g: l.protein_g })),
         weights.map((w) => ({ date: w.date, weight_kg: w.weight_kg }))
       )
-      setLineData(series.map((p) => ({ x: new Date(p.date).getTime(), y: Math.round(p.gramsPerKg * 100) / 100 })))
+      const grouped = groupByPeriod(series.map((p) => ({ date: p.date, value: p.gramsPerKg })), granularity)
+      setLineData(grouped.map((p) => ({ x: new Date(p.date).getTime(), y: Math.round(p.value * 100) / 100 })))
     } else if (metric === 'sleep') {
       const logs = await getRecoveryLogs(days)
       const points = logs.filter((l): l is typeof l & { sleep_hours: number } => l.sleep_hours != null).map((l) => ({ date: l.date, value: l.sleep_hours }))
-      const rolling = rollingAverageByDate(points, 7)
-      setBarData(points.map((p, i) => ({ value: p.value, lineValue: rolling[i]?.value ?? null })))
+      const grouped = groupByPeriod(points, granularity)
+      const rolling = granularity === 'day' ? rollingAverageByDate(grouped, 7) : rollingAverageIndexed(grouped, 3)
+      setBarData(grouped.map((p, i) => ({ value: p.value, lineValue: rolling[i]?.value ?? null })))
     } else if (metric === 'resting-hr') {
       const logs = await getRecoveryLogs(days)
-      setLineData(
-        logs.filter((l): l is typeof l & { resting_hr: number } => l.resting_hr != null).map((l) => ({ x: new Date(l.date).getTime(), y: l.resting_hr }))
+      const grouped = groupByPeriod(
+        logs.filter((l): l is typeof l & { resting_hr: number } => l.resting_hr != null).map((l) => ({ date: l.date, value: l.resting_hr })),
+        granularity
       )
+      setLineData(grouped.map((p) => ({ x: new Date(p.date).getTime(), y: Math.round(p.value * 10) / 10 })))
     } else if (metric === 'progressive-overload' && exerciseId) {
       const history = await getExerciseHistory(exerciseId, days)
-      setLineData(history.map((p) => ({ x: new Date(p.date).getTime(), y: Math.round(p.estimated1RM * 10) / 10 })))
+      const grouped = groupByPeriod(history.map((p) => ({ date: p.date, value: p.estimated1RM })), granularity)
+      setLineData(grouped.map((p) => ({ x: new Date(p.date).getTime(), y: Math.round(p.value * 10) / 10 })))
     }
     setLoading(false)
-  }, [metric, exerciseId, days])
+  }, [metric, exerciseId, days, granularity])
 
   useEffect(() => {
     load()
@@ -87,17 +93,17 @@ export default function StatDetailScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.rangeRow}>
-          {RANGES.map((r) => (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rangeRow}>
+          {GRANULARITY_OPTIONS.map((g) => (
             <TouchableOpacity
-              key={r.key}
-              style={[styles.rangeBtn, range === r.key && styles.rangeBtnOn]}
-              onPress={() => setRange(r.key)}
+              key={g.key}
+              style={[styles.rangeBtn, granularity === g.key && styles.rangeBtnOn]}
+              onPress={() => setGranularity(g.key)}
             >
-              <Text style={[styles.rangeText, range === r.key && styles.rangeTextOn]}>{r.label}</Text>
+              <Text style={[styles.rangeText, granularity === g.key && styles.rangeTextOn]}>{g.label}</Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
 
         <View style={styles.card}>
           {loading ? (
@@ -127,6 +133,7 @@ const styles = StyleSheet.create({
   content: { padding: sp.md, paddingBottom: 120 },
   rangeRow: {
     flexDirection: 'row',
+    gap: 4,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -134,7 +141,7 @@ const styles = StyleSheet.create({
     padding: 4,
     marginBottom: sp.md,
   },
-  rangeBtn: { flex: 1, borderRadius: r.full, paddingVertical: 9, alignItems: 'center' },
+  rangeBtn: { borderRadius: r.full, paddingVertical: 9, paddingHorizontal: 14, alignItems: 'center' },
   rangeBtnOn: { backgroundColor: colors.accentLime },
   rangeText: { color: colors.textSecondary, fontFamily: fonts.sansSemiBold, fontSize: fs.sm },
   rangeTextOn: { color: colors.textPrimary },

@@ -79,8 +79,9 @@ function CardHeaderLink({ title, onPress }: { title: string; onPress: () => void
   )
 }
 
-type StatsTab = 'training' | 'body' | 'recovery' | 'nutrition' | 'insights'
+type StatsTab = 'overview' | 'training' | 'body' | 'recovery' | 'nutrition' | 'insights'
 const TABS: { key: StatsTab; label: string }[] = [
+  { key: 'overview', label: 'Overview' },
   { key: 'training', label: 'Training' },
   { key: 'body', label: 'Body' },
   { key: 'recovery', label: 'Recovery' },
@@ -90,7 +91,7 @@ const TABS: { key: StatsTab; label: string }[] = [
 
 export default function StatsScreen() {
   const router = useRouter()
-  const [tab, setTab] = useState<StatsTab>('training')
+  const [tab, setTab] = useState<StatsTab>('overview')
 
   // Training tab state (unchanged)
   const [range, setRange] = useState<'weekly' | 'monthly'>('weekly')
@@ -117,6 +118,8 @@ export default function StatsScreen() {
   const [nutritionLogs, setNutritionLogs] = useState<NutritionLog[]>([])
   const [calorieGoal, setCalorieGoal] = useState(2400)
   const [proteinGoal, setProteinGoal] = useState(160)
+  const [carbsGoal, setCarbsGoal] = useState(250)
+  const [fatGoal, setFatGoal] = useState(75)
 
   // Insights tab state
   const [topInsight, setTopInsight] = useState<{ headline: string; color: SignalColor } | null>(null)
@@ -176,6 +179,8 @@ export default function StatsScreen() {
     setHeightCm(goals.height_cm)
     setCalorieGoal(goals.calorie_goal)
     setProteinGoal(goals.protein_goal)
+    setCarbsGoal(goals.carbs_goal)
+    setFatGoal(goals.fat_goal)
 
     const [w, c, rec, nut, stale, calib, insight] = await Promise.all([
       getBodyWeightLogs(30),
@@ -205,6 +210,19 @@ export default function StatsScreen() {
 
         <CategoryTabRow tabs={TABS} active={tab} onChange={setTab} />
 
+        {tab === 'overview' && (
+          <OverviewTab
+            nutritionLogs={nutritionLogs}
+            calorieGoal={calorieGoal}
+            proteinGoal={proteinGoal}
+            carbsGoal={carbsGoal}
+            fatGoal={fatGoal}
+            weights={weights}
+            mgVolume={mgVolume}
+            sessionsThisWeek={sessionsThisWeek}
+            totalWeekVol={totalWeekVol}
+          />
+        )}
         {tab === 'training' && (
           <TrainingTab
             range={range}
@@ -238,6 +256,151 @@ export default function StatsScreen() {
         )}
       </ScrollView>
     </SafeAreaView>
+  )
+}
+
+// ── Overview tab: this-week rollup with week-over-week deltas ────────
+function currentWeekBounds() {
+  const today = new Date()
+  const monday = new Date(today)
+  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7))
+  monday.setHours(0, 0, 0, 0)
+  const prevMonday = new Date(monday)
+  prevMonday.setDate(monday.getDate() - 7)
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
+  const prevSunday = new Date(prevMonday)
+  prevSunday.setDate(prevMonday.getDate() + 6)
+  const iso = (d: Date) => d.toISOString().slice(0, 10)
+  return { curStart: iso(monday), curEnd: iso(sunday), prevStart: iso(prevMonday), prevEnd: iso(prevSunday) }
+}
+
+function deltaLine(cur: number | null, prev: number | null, unit: string, digits = 0): string {
+  if (cur == null || prev == null) return 'No data for last week yet'
+  const diff = cur - prev
+  const arrow = diff > 0.5 * Math.pow(10, -digits) ? '↑' : diff < -0.5 * Math.pow(10, -digits) ? '↓' : '→'
+  const sign = diff > 0 ? '+' : ''
+  return `${arrow} ${sign}${diff.toFixed(digits)}${unit} vs last week`
+}
+
+function OverviewTab({
+  nutritionLogs,
+  calorieGoal,
+  proteinGoal,
+  carbsGoal,
+  fatGoal,
+  weights,
+  mgVolume,
+  sessionsThisWeek,
+  totalWeekVol,
+}: {
+  nutritionLogs: NutritionLog[]
+  calorieGoal: number
+  proteinGoal: number
+  carbsGoal: number
+  fatGoal: number
+  weights: BodyWeightLog[]
+  mgVolume: WeeklyMuscleGroupVolume[]
+  sessionsThisWeek: number
+  totalWeekVol: number
+}) {
+  const { curStart, curEnd, prevStart, prevEnd } = currentWeekBounds()
+  const inRange = (date: string, start: string, end: string) => date >= start && date <= end
+
+  const curNutrition = nutritionLogs.filter((l) => inRange(l.date, curStart, curEnd))
+  const prevNutrition = nutritionLogs.filter((l) => inRange(l.date, prevStart, prevEnd))
+  const curLoggedDays = curNutrition.filter((l) => l.calories != null)
+  const prevLoggedDays = prevNutrition.filter((l) => l.calories != null)
+
+  const avgCalCur = average(curLoggedDays.map((l) => l.calories!))
+  const avgCalPrev = average(prevLoggedDays.map((l) => l.calories!))
+  const avgProteinCur = average(curLoggedDays.map((l) => l.protein_g!))
+  const avgCarbsCur = average(curLoggedDays.map((l) => l.carbs_g!))
+  const avgFatCur = average(curLoggedDays.map((l) => l.fat_g!))
+
+  const deficit = avgCalCur != null ? avgCalCur - calorieGoal : null
+  const adherencePct = Math.round((curLoggedDays.length / 7) * 100)
+
+  const proteinDaysCur = curLoggedDays.filter((l) => l.protein_g != null)
+  const proteinHitCur = proteinDaysCur.filter((l) => l.protein_g! >= proteinGoal)
+  const proteinPct = proteinDaysCur.length > 0 ? Math.round((proteinHitCur.length / proteinDaysCur.length) * 100) : null
+
+  const curWeights = weights.filter((w) => inRange(w.date, curStart, curEnd))
+  const prevWeights = weights.filter((w) => inRange(w.date, prevStart, prevEnd))
+  const avgWeightCur = average(curWeights.map((w) => w.weight_kg))
+  const avgWeightPrev = average(prevWeights.map((w) => w.weight_kg))
+
+  const curVol = mgVolume.find((w) => w.weekStart === curStart)
+  const prevVol = mgVolume.find((w) => w.weekStart === prevStart)
+  const curVolTotal = curVol ? Object.values(curVol.byGroup).reduce((s, v) => s + v, 0) : totalWeekVol
+  const prevVolTotal = prevVol ? Object.values(prevVol.byGroup).reduce((s, v) => s + v, 0) : null
+
+  return (
+    <>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>
+          Week of {format(new Date(curStart), 'MMM d')} – {format(new Date(curEnd), 'MMM d')}
+        </Text>
+        <View style={styles.statsRow}>
+          <StatChip label="Adherence" value={`${adherencePct}%`} />
+          <StatChip label="Protein hit rate" value={proteinPct != null ? `${proteinPct}%` : '—'} />
+          <StatChip label="Sessions" value={String(sessionsThisWeek)} />
+          <StatChip label="Volume" value={`${fmtVol(curVolTotal)} kg`} />
+        </View>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Calories & Deficit</Text>
+        {avgCalCur == null ? (
+          <Text style={styles.emptyText}>Log meals this week to see your calorie average</Text>
+        ) : (
+          <>
+            <Text style={styles.bigStat}>{Math.round(avgCalCur)} kcal/day</Text>
+            <Text style={styles.emptyText}>
+              {deficit != null && deficit < 0
+                ? `${Math.abs(Math.round(deficit))} kcal/day deficit vs ${calorieGoal} goal`
+                : deficit != null && deficit > 0
+                  ? `${Math.round(deficit)} kcal/day surplus vs ${calorieGoal} goal`
+                  : `On target (${calorieGoal} goal)`}
+            </Text>
+            <Text style={styles.chartCaption}>{deltaLine(avgCalCur, avgCalPrev, ' kcal')}</Text>
+          </>
+        )}
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Macros (avg/day this week)</Text>
+        {avgProteinCur == null ? (
+          <Text style={styles.emptyText}>Log meals this week to see macro averages</Text>
+        ) : (
+          <View style={styles.statsRow}>
+            <StatChip label={`Protein / ${proteinGoal}g`} value={`${Math.round(avgProteinCur)}g`} />
+            <StatChip label={`Carbs / ${carbsGoal}g`} value={`${Math.round(avgCarbsCur ?? 0)}g`} />
+            <StatChip label={`Fat / ${fatGoal}g`} value={`${Math.round(avgFatCur ?? 0)}g`} />
+          </View>
+        )}
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Body Weight</Text>
+        {avgWeightCur == null ? (
+          <Text style={styles.emptyText}>Log weight this week to see the trend</Text>
+        ) : (
+          <>
+            <Text style={styles.bigStat}>{avgWeightCur.toFixed(1)} kg</Text>
+            <Text style={styles.chartCaption}>{deltaLine(avgWeightCur, avgWeightPrev, ' kg', 1)}</Text>
+          </>
+        )}
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Training Volume</Text>
+        <Text style={styles.bigStat}>{fmtVol(curVolTotal)} kg</Text>
+        <Text style={styles.chartCaption}>
+          {prevVolTotal != null ? deltaLine(curVolTotal, prevVolTotal, ' kg') : 'No data for last week yet'}
+        </Text>
+      </View>
+    </>
   )
 }
 

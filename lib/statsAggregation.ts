@@ -166,3 +166,59 @@ export function lastNDays<T extends { date: string }>(series: T[], days: number,
   const sinceStr = since.toISOString().slice(0, 10)
   return series.filter((p) => p.date >= sinceStr)
 }
+
+/** Chart granularity — how many raw days get averaged into one plotted point. */
+export type Granularity = 'day' | 'week' | 'month' | 'quarter' | 'half-year' | 'year'
+
+/** Period options for a granularity selector, each paired with a sensible lookback window in days. */
+export const GRANULARITY_OPTIONS: { key: Granularity; label: string; days: number }[] = [
+  { key: 'day', label: 'Day', days: 30 },
+  { key: 'week', label: 'Week', days: 90 },
+  { key: 'month', label: 'Month', days: 365 },
+  { key: 'quarter', label: '3 Months', days: 730 },
+  { key: 'half-year', label: '6 Months', days: 1095 },
+  { key: 'year', label: '12 Months', days: 1825 },
+]
+
+/** ISO date of the first day of the bucket `dateStr` falls into for `granularity`. */
+function periodStartFor(dateStr: string, granularity: Granularity): string {
+  if (granularity === 'day') return dateStr
+  if (granularity === 'week') return isoWeekStart(dateStr)
+  const d = new Date(dateStr)
+  const year = d.getFullYear()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  if (granularity === 'month') return `${year}-${pad(d.getMonth() + 1)}-01`
+  if (granularity === 'quarter') return `${year}-${pad(Math.floor(d.getMonth() / 3) * 3 + 1)}-01`
+  if (granularity === 'half-year') return `${year}-${pad(d.getMonth() < 6 ? 1 : 7)}-01`
+  return `${year}-01-01`
+}
+
+/** Groups a dated series into buckets of `granularity`, averaging values within each bucket. */
+export function groupByPeriod(series: DatedValue[], granularity: Granularity): DatedValue[] {
+  if (granularity === 'day') {
+    return [...series].sort((a, b) => a.date.localeCompare(b.date))
+  }
+  const byPeriod = new Map<string, { sum: number; count: number }>()
+  for (const point of series) {
+    const key = periodStartFor(point.date, granularity)
+    const existing = byPeriod.get(key)
+    if (existing) {
+      existing.sum += point.value
+      existing.count += 1
+    } else {
+      byPeriod.set(key, { sum: point.value, count: 1 })
+    }
+  }
+  return Array.from(byPeriod.entries())
+    .map(([date, { sum, count }]) => ({ date, value: sum / count }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+}
+
+/** Trailing rolling average over the last `window` *points* (not calendar days) — for use on already-bucketed series. */
+export function rollingAverageIndexed(series: DatedValue[], window: number): DatedValue[] {
+  return series.map((point, i) => {
+    const slice = series.slice(Math.max(0, i - window + 1), i + 1)
+    const avg = slice.reduce((s, p) => s + p.value, 0) / slice.length
+    return { date: point.date, value: avg }
+  })
+}
