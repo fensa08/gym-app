@@ -22,6 +22,16 @@ export interface LoggedSet {
   superset?: number | null
 }
 
+export interface RunLog {
+  id: string
+  started_at: number
+  duration_s: number
+  distance_km: number
+  avg_pace_s_per_km: number | null // seconds per km, derived from duration/distance
+  avg_heart_rate: number | null
+  notes: string | null
+}
+
 export interface ActiveExercise {
   workoutExerciseId?: string
   exerciseId: string

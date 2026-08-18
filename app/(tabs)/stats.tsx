@@ -44,7 +44,7 @@ import {
   type Trend,
 } from '../../lib/statsAggregation'
 import { CategoryTabRow } from '../../components/CategoryTabRow'
-import { LineChart, DivergingBarChart, BarWithLineChart, type LineSeries } from '../../components/Charts'
+import { LineChart, BarChart, DivergingBarChart, BarWithLineChart, type LineSeries } from '../../components/Charts'
 import { StatChip } from '../../components/Cards'
 import type { BodyWeightLog, BodyCompositionLog, RecoveryLog, NutritionLog } from '../../lib/types'
 
@@ -70,12 +70,12 @@ function trendArrow(trend: Trend): string {
   return trend === 'up' ? '↑' : trend === 'down' ? '↓' : '→'
 }
 
-function CardHeaderLink({ title, onPress }: { title: string; onPress: () => void }) {
+function CardHeaderLink({ title, label = 'Details', onPress }: { title: string; label?: string; onPress: () => void }) {
   return (
     <View style={styles.cardHeaderRow}>
       <Text style={styles.cardTitle}>{title}</Text>
       <TouchableOpacity onPress={onPress} hitSlop={8} style={styles.detailsBtn}>
-        <Text style={styles.detailsBtnText}>Details</Text>
+        <Text style={styles.detailsBtnText}>{label}</Text>
         <Ionicons name="chevron-forward" size={13} color={colors.accentMid} />
       </TouchableOpacity>
     </View>
@@ -295,6 +295,7 @@ function OverviewTab({
   const [prevWeights, setPrevWeights] = useState<BodyWeightLog[]>([])
   const [curTraining, setCurTraining] = useState({ volume: 0, sessions: 0 })
   const [prevTraining, setPrevTraining] = useState<{ volume: number; sessions: number } | null>(null)
+  const router = useRouter()
 
   const isCurrentWeek = weekOffset === 0
   const { curStart, curEnd, prevStart, prevEnd } = currentWeekBounds(weekOffset)
@@ -346,6 +347,15 @@ function OverviewTab({
   const curVolTotal = curTraining.volume
   const prevVolTotal = prevTraining?.volume ?? null
 
+  const calorieByDate = new Map(curNutrition.filter((l) => l.calories != null).map((l) => [l.date, l.calories!] as const))
+  const weekStartDate = new Date(curStart)
+  const calorieBars = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStartDate)
+    d.setDate(weekStartDate.getDate() + i)
+    const iso = d.toISOString().slice(0, 10)
+    return { label: WEEK_LABELS[i], value: calorieByDate.get(iso) ?? 0 }
+  })
+
   return (
     <>
       <View style={styles.card}>
@@ -378,19 +388,25 @@ function OverviewTab({
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Calories & Deficit</Text>
+        <CardHeaderLink title="Calories & Deficit" label="View All" onPress={() => router.push('/stats/calories')} />
         {avgCalCur == null ? (
           <Text style={styles.emptyText}>Log meals this week to see your calorie average</Text>
         ) : (
           <>
-            <Text style={styles.bigStat}>{Math.round(avgCalCur)} kcal/day</Text>
-            <Text style={styles.emptyText}>
-              {deficit != null && deficit < 0
-                ? `${Math.abs(Math.round(deficit))} kcal/day deficit vs ${calorieGoal} goal`
-                : deficit != null && deficit > 0
-                  ? `${Math.round(deficit)} kcal/day surplus vs ${calorieGoal} goal`
-                  : `On target (${calorieGoal} goal)`}
-            </Text>
+            <BarChart data={calorieBars} goalLine={calorieGoal} height={110} />
+            <Text style={styles.chartCaption}>Dashed line = {calorieGoal} kcal goal</Text>
+            <View style={styles.calorieSplitRow}>
+              <View style={styles.calorieSplitHalf}>
+                <Text style={styles.bigStat}>{Math.round(avgCalCur)}</Text>
+                <Text style={styles.calorieSplitLabel}>kcal / day</Text>
+              </View>
+              <View style={[styles.calorieSplitHalf, styles.calorieSplitHalfBorder]}>
+                <Text style={styles.bigStat}>{deficit != null ? Math.abs(Math.round(deficit)) : '—'}</Text>
+                <Text style={styles.calorieSplitLabel}>
+                  {deficit != null && deficit < 0 ? 'kcal / day deficit' : deficit != null && deficit > 0 ? 'kcal / day surplus' : 'on target'}
+                </Text>
+              </View>
+            </View>
             <Text style={styles.chartCaption}>{deltaLine(avgCalCur, avgCalPrev, ' kcal')}</Text>
           </>
         )}
@@ -1102,6 +1118,10 @@ const styles = StyleSheet.create({
   statsRow: { flexDirection: 'row', gap: sp.sm, marginBottom: sp.sm },
   chartCaption: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: 10, marginTop: sp.sm, textAlign: 'center' },
   bigStat: { color: colors.textPrimary, fontFamily: fonts.monoBold, fontSize: fs.xxxl, marginBottom: 4 },
+  calorieSplitRow: { flexDirection: 'row', marginTop: sp.md },
+  calorieSplitHalf: { flex: 1, alignItems: 'center' },
+  calorieSplitHalfBorder: { borderLeftWidth: 1, borderLeftColor: colors.border },
+  calorieSplitLabel: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.xs },
   insightPreviewCard: {
     backgroundColor: colors.surface,
     borderWidth: 1,

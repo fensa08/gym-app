@@ -380,6 +380,17 @@ export default function StartWorkoutScreen() {
             <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </TouchableOpacity>
 
+          <TouchableOpacity style={styles.customCard} onPress={() => router.push('/workout/run')} activeOpacity={0.85}>
+            <View style={[styles.programIcon, { backgroundColor: colors.surfaceMint }]}>
+              <Ionicons name="walk-outline" size={22} color={colors.accentMid} />
+            </View>
+            <View style={styles.programInfo}>
+              <Text style={styles.programName}>Log a Run</Text>
+              <Text style={styles.programMeta}>Track time, pace, distance & heart rate</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+
           {/* Programs: last 2 recent first, then rest */}
           <View style={styles.programList}>
             {orderedPrograms.map((item, i) => (

@@ -84,6 +84,13 @@ export default function RootLayout() {
           }}
         />
         <Stack.Screen
+          name="workout/run"
+          options={{
+            presentation: 'fullScreenModal',
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
           name="body/log-weight"
           options={{
             presentation: 'transparentModal',
