@@ -39,6 +39,13 @@ export async function getBodyWeightLogs(days = 30): Promise<BodyWeightLog[]> {
   return snap.docs.map((d, i) => ({ id: i, ...d.data() } as BodyWeightLog))
 }
 
+export async function getBodyWeightLogsRange(startDate: string, endDate: string): Promise<BodyWeightLog[]> {
+  const snap = await getDocs(
+    query(col('body_weight_logs'), where('date', '>=', startDate), where('date', '<=', endDate), orderBy('date'))
+  )
+  return snap.docs.map((d, i) => ({ id: i, ...d.data() } as BodyWeightLog))
+}
+
 export async function getLatestBodyWeight(): Promise<BodyWeightLog | null> {
   const snap = await getDocs(query(col('body_weight_logs'), orderBy('date', 'desc'), limit(1)))
   if (snap.empty) return null
@@ -93,10 +100,18 @@ export async function insertBodyCompositionLog(
   })
 }
 
+// Only orders by `date` (auto-indexed by Firestore) and breaks same-date ties
+// client-side, so this doesn't depend on a composite index being deployed.
+async function getRecentBodyCompositions(count: number): Promise<BodyCompositionLog[]> {
+  const snap = await getDocs(query(col('body_composition_logs'), orderBy('date', 'desc'), limit(count + 5)))
+  const docs = snap.docs.map((d) => ({ id: 0, ...d.data() } as BodyCompositionLog))
+  docs.sort((a, b) => (a.date === b.date ? (b.logged_at ?? 0) - (a.logged_at ?? 0) : b.date.localeCompare(a.date)))
+  return docs.slice(0, count)
+}
+
 export async function getLatestBodyComposition(): Promise<BodyCompositionLog | null> {
-  const snap = await getDocs(query(col('body_composition_logs'), orderBy('date', 'desc'), orderBy('logged_at', 'desc'), limit(1)))
-  if (snap.empty) return null
-  return { id: 0, ...snap.docs[0].data() } as BodyCompositionLog
+  const docs = await getRecentBodyCompositions(1)
+  return docs[0] ?? null
 }
 
 export async function getBodyCompositionHistory(days = 60): Promise<BodyCompositionLog[]> {
@@ -561,9 +576,8 @@ export async function getNutritionAverages(days = 7): Promise<{
 }
 
 export async function getPreviousBodyComposition(): Promise<BodyCompositionLog | null> {
-  const snap = await getDocs(query(col('body_composition_logs'), orderBy('date', 'desc'), orderBy('logged_at', 'desc'), limit(2)))
-  if (snap.docs.length < 2) return null
-  return { id: 0, ...snap.docs[1].data() } as BodyCompositionLog
+  const docs = await getRecentBodyCompositions(2)
+  return docs[1] ?? null
 }
 
 // ── Staleness detection ───────────────────────────────────────────

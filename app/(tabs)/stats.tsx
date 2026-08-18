@@ -15,17 +15,20 @@ import {
   getTrainingFrequencyByMuscleGroup,
   getExercisesWithHistory,
   getExerciseHistory,
+  getWorkoutVolumeInRange,
   type WeeklyMuscleGroupVolume,
   type WeeklyMuscleGroupFrequency,
   type ExerciseHistoryPoint,
 } from '../../lib/firestore/queries'
 import {
   getBodyWeightLogs,
+  getBodyWeightLogsRange,
   getBodyCompositionHistory,
   getUserGoals,
   getRecoveryLogs,
   readinessScore,
   getNutritionLogs,
+  getNutritionLogsRange,
   getStaleExercises,
   getMaintenanceCalibration,
 } from '../../lib/firestore/queriesHealth'
@@ -211,17 +214,7 @@ export default function StatsScreen() {
         <CategoryTabRow tabs={TABS} active={tab} onChange={setTab} />
 
         {tab === 'overview' && (
-          <OverviewTab
-            nutritionLogs={nutritionLogs}
-            calorieGoal={calorieGoal}
-            proteinGoal={proteinGoal}
-            carbsGoal={carbsGoal}
-            fatGoal={fatGoal}
-            weights={weights}
-            mgVolume={mgVolume}
-            sessionsThisWeek={sessionsThisWeek}
-            totalWeekVol={totalWeekVol}
-          />
+          <OverviewTab calorieGoal={calorieGoal} proteinGoal={proteinGoal} carbsGoal={carbsGoal} fatGoal={fatGoal} />
         )}
         {tab === 'training' && (
           <TrainingTab
@@ -259,11 +252,11 @@ export default function StatsScreen() {
   )
 }
 
-// ── Overview tab: this-week rollup with week-over-week deltas ────────
-function currentWeekBounds() {
+// ── Overview tab: per-week rollup with prev/next navigation ──────────
+function currentWeekBounds(offset = 0) {
   const today = new Date()
   const monday = new Date(today)
-  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7))
+  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7) + offset * 7)
   monday.setHours(0, 0, 0, 0)
   const prevMonday = new Date(monday)
   prevMonday.setDate(monday.getDate() - 7)
@@ -284,31 +277,53 @@ function deltaLine(cur: number | null, prev: number | null, unit: string, digits
 }
 
 function OverviewTab({
-  nutritionLogs,
   calorieGoal,
   proteinGoal,
   carbsGoal,
   fatGoal,
-  weights,
-  mgVolume,
-  sessionsThisWeek,
-  totalWeekVol,
 }: {
-  nutritionLogs: NutritionLog[]
   calorieGoal: number
   proteinGoal: number
   carbsGoal: number
   fatGoal: number
-  weights: BodyWeightLog[]
-  mgVolume: WeeklyMuscleGroupVolume[]
-  sessionsThisWeek: number
-  totalWeekVol: number
 }) {
-  const { curStart, curEnd, prevStart, prevEnd } = currentWeekBounds()
-  const inRange = (date: string, start: string, end: string) => date >= start && date <= end
+  const [weekOffset, setWeekOffset] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [curNutrition, setCurNutrition] = useState<NutritionLog[]>([])
+  const [prevNutrition, setPrevNutrition] = useState<NutritionLog[]>([])
+  const [curWeights, setCurWeights] = useState<BodyWeightLog[]>([])
+  const [prevWeights, setPrevWeights] = useState<BodyWeightLog[]>([])
+  const [curTraining, setCurTraining] = useState({ volume: 0, sessions: 0 })
+  const [prevTraining, setPrevTraining] = useState<{ volume: number; sessions: number } | null>(null)
 
-  const curNutrition = nutritionLogs.filter((l) => inRange(l.date, curStart, curEnd))
-  const prevNutrition = nutritionLogs.filter((l) => inRange(l.date, prevStart, prevEnd))
+  const isCurrentWeek = weekOffset === 0
+  const { curStart, curEnd, prevStart, prevEnd } = currentWeekBounds(weekOffset)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    Promise.all([
+      getNutritionLogsRange(curStart, curEnd),
+      getNutritionLogsRange(prevStart, prevEnd),
+      getBodyWeightLogsRange(curStart, curEnd),
+      getBodyWeightLogsRange(prevStart, prevEnd),
+      getWorkoutVolumeInRange(curStart, curEnd),
+      getWorkoutVolumeInRange(prevStart, prevEnd),
+    ]).then(([curNut, prevNut, curW, prevW, curVol, prevVol]) => {
+      if (cancelled) return
+      setCurNutrition(curNut)
+      setPrevNutrition(prevNut)
+      setCurWeights(curW)
+      setPrevWeights(prevW)
+      setCurTraining(curVol)
+      setPrevTraining(prevVol)
+      setLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [curStart, curEnd, prevStart, prevEnd])
+
   const curLoggedDays = curNutrition.filter((l) => l.calories != null)
   const prevLoggedDays = prevNutrition.filter((l) => l.calories != null)
 
@@ -325,28 +340,41 @@ function OverviewTab({
   const proteinHitCur = proteinDaysCur.filter((l) => l.protein_g! >= proteinGoal)
   const proteinPct = proteinDaysCur.length > 0 ? Math.round((proteinHitCur.length / proteinDaysCur.length) * 100) : null
 
-  const curWeights = weights.filter((w) => inRange(w.date, curStart, curEnd))
-  const prevWeights = weights.filter((w) => inRange(w.date, prevStart, prevEnd))
   const avgWeightCur = average(curWeights.map((w) => w.weight_kg))
   const avgWeightPrev = average(prevWeights.map((w) => w.weight_kg))
 
-  const curVol = mgVolume.find((w) => w.weekStart === curStart)
-  const prevVol = mgVolume.find((w) => w.weekStart === prevStart)
-  const curVolTotal = curVol ? Object.values(curVol.byGroup).reduce((s, v) => s + v, 0) : totalWeekVol
-  const prevVolTotal = prevVol ? Object.values(prevVol.byGroup).reduce((s, v) => s + v, 0) : null
+  const curVolTotal = curTraining.volume
+  const prevVolTotal = prevTraining?.volume ?? null
 
   return (
     <>
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>
-          Week of {format(new Date(curStart), 'MMM d')} – {format(new Date(curEnd), 'MMM d')}
-        </Text>
-        <View style={styles.statsRow}>
-          <StatChip label="Adherence" value={`${adherencePct}%`} />
-          <StatChip label="Protein hit rate" value={proteinPct != null ? `${proteinPct}%` : '—'} />
-          <StatChip label="Sessions" value={String(sessionsThisWeek)} />
-          <StatChip label="Volume" value={`${fmtVol(curVolTotal)} kg`} />
+        <View style={styles.weekNavRow}>
+          <TouchableOpacity onPress={() => setWeekOffset((o) => o - 1)} hitSlop={10} style={styles.weekNavBtn}>
+            <Ionicons name="chevron-back" size={18} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <Text style={[styles.cardTitle, styles.weekNavTitle]}>
+            Week of {format(new Date(curStart), 'MMM d')} – {format(new Date(curEnd), 'MMM d')}
+          </Text>
+          <TouchableOpacity
+            onPress={() => !isCurrentWeek && setWeekOffset((o) => o + 1)}
+            hitSlop={10}
+            style={styles.weekNavBtn}
+            disabled={isCurrentWeek}
+          >
+            <Ionicons name="chevron-forward" size={18} color={isCurrentWeek ? colors.border : colors.textPrimary} />
+          </TouchableOpacity>
         </View>
+        {loading ? (
+          <Text style={styles.emptyText}>Loading…</Text>
+        ) : (
+          <View style={styles.statsRow}>
+            <StatChip label="Adherence" value={`${adherencePct}%`} />
+            <StatChip label="Protein hit rate" value={proteinPct != null ? `${proteinPct}%` : '—'} />
+            <StatChip label="Sessions" value={String(curTraining.sessions)} />
+            <StatChip label="Volume" value={`${fmtVol(curVolTotal)} kg`} />
+          </View>
+        )}
       </View>
 
       <View style={styles.card}>
@@ -1024,6 +1052,9 @@ const styles = StyleSheet.create({
     marginBottom: sp.md,
   },
   cardTop: { marginBottom: sp.md },
+  weekNavRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: sp.md },
+  weekNavBtn: { padding: 4 },
+  weekNavTitle: { flex: 1, textAlign: 'center', marginBottom: 0 },
   cardTitle: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.sm, marginBottom: sp.md },
   bars: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, height: BAR_HEIGHT },
   barCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: '100%', gap: 6 },

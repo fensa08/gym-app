@@ -40,18 +40,23 @@ export default function BodyHubScreen() {
   )
 
   async function loadData() {
-    const [w, c, latest, prev, g] = await Promise.all([
+    const [w, c, latest, prev, g] = await Promise.allSettled([
       getBodyWeightLogs(30),
       getBodyCompositionHistory(60),
       getLatestBodyComposition(),
       getPreviousBodyComposition(),
       getUserGoals(),
     ])
-    setWeights(w)
-    setComps(c)
-    setLatestComp(latest)
-    setPrevComp(prev)
-    setGoals(g)
+    if (w.status === 'fulfilled') setWeights(w.value)
+    else console.error('Failed to load body weight logs', w.reason)
+    if (c.status === 'fulfilled') setComps(c.value)
+    else console.error('Failed to load body composition history', c.reason)
+    if (latest.status === 'fulfilled') setLatestComp(latest.value)
+    else console.error('Failed to load latest body composition', latest.reason)
+    if (prev.status === 'fulfilled') setPrevComp(prev.value)
+    else console.error('Failed to load previous body composition', prev.reason)
+    if (g.status === 'fulfilled') setGoals(g.value)
+    else console.error('Failed to load user goals', g.reason)
   }
 
   const heightCm = latestComp?.height_cm ?? goals?.height_cm ?? 178

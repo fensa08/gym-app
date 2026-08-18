@@ -49,11 +49,20 @@ export default function HomeScreen() {
   )
 
   async function loadData() {
-    const ws = await getRecentWorkouts(30)
-    setRecentWorkouts(ws)
-    setStreak(await getWorkoutStreak())
+    try {
+      const ws = await getRecentWorkouts(30)
+      setRecentWorkouts(ws)
+    } catch (e) {
+      console.error('Failed to load recent workouts', e)
+    }
 
-    const [rec, nut, g, latestW, spark, daysSince, insight] = await Promise.all([
+    try {
+      setStreak(await getWorkoutStreak())
+    } catch (e) {
+      console.error('Failed to load workout streak', e)
+    }
+
+    const [rec, nut, g, latestW, spark, daysSince, insight] = await Promise.allSettled([
       getLatestRecoveryLog(),
       getTodayNutritionLog(),
       getUserGoals(),
@@ -62,44 +71,59 @@ export default function HomeScreen() {
       getDaysSinceLastMeasurement(),
       getTopInsight(),
     ])
-    setRecovery(rec)
-    setNutrition(nut)
-    setGoals(g)
-    setLatestWeight(latestW)
-    setWeightSpark(spark)
-    setDaysSinceMeasurement(daysSince)
-    setTopInsight(insight)
+    if (rec.status === 'fulfilled') setRecovery(rec.value)
+    else console.error('Failed to load latest recovery log', rec.reason)
+    if (nut.status === 'fulfilled') setNutrition(nut.value)
+    else console.error('Failed to load today nutrition log', nut.reason)
+    if (g.status === 'fulfilled') setGoals(g.value)
+    else console.error('Failed to load user goals', g.reason)
+    if (latestW.status === 'fulfilled') setLatestWeight(latestW.value)
+    else console.error('Failed to load latest body weight', latestW.reason)
+    if (spark.status === 'fulfilled') setWeightSpark(spark.value)
+    else console.error('Failed to load body weight spark', spark.reason)
+    if (daysSince.status === 'fulfilled') setDaysSinceMeasurement(daysSince.value)
+    else console.error('Failed to load days since last measurement', daysSince.reason)
+    if (insight.status === 'fulfilled') setTopInsight(insight.value)
+    else console.error('Failed to load top insight', insight.reason)
 
-    const prs = await getAllPRs()
-    const now = new Date()
-    setPrsThisMonth(
-      prs.filter((p) => {
-        const d = new Date(p.completed_at)
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
-      }).length
-    )
+    try {
+      const prs = await getAllPRs()
+      const now = new Date()
+      setPrsThisMonth(
+        prs.filter((p) => {
+          const d = new Date(p.completed_at)
+          return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+        }).length
+      )
+    } catch (e) {
+      console.error('Failed to load PRs', e)
+    }
 
-    const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 })
-    const volumeRows = await getWeeklyVolume()
-    const volumeByDay = new Map(volumeRows.map((v) => [v.day, v.volume]))
-    let sessions = 0
-    const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
-    const isoDay = (d: Date) => d.toISOString().slice(0, 10)
-    const rawBars = days.map((d) => {
-      const vol = volumeByDay.get(isoDay(d)) ?? 0
-      if (vol > 0) sessions++
-      return { d, vol }
-    })
-    setSessionsThisWeek(sessions)
-    const maxVol = Math.max(...rawBars.map((b) => b.vol), 1)
-    setWeeklyBars(
-      rawBars.map(({ d, vol }, i) => ({
-        day: WEEK_LABELS[i],
-        heightPct: vol > 0 ? Math.max(8, Math.round((vol / maxVol) * 100)) : 4,
-        color: vol > 0 ? colors.accentLime : colors.border,
-        isToday: d.toDateString() === new Date().toDateString(),
-      }))
-    )
+    try {
+      const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 })
+      const volumeRows = await getWeeklyVolume()
+      const volumeByDay = new Map(volumeRows.map((v) => [v.day, v.volume]))
+      let sessions = 0
+      const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
+      const isoDay = (d: Date) => d.toISOString().slice(0, 10)
+      const rawBars = days.map((d) => {
+        const vol = volumeByDay.get(isoDay(d)) ?? 0
+        if (vol > 0) sessions++
+        return { d, vol }
+      })
+      setSessionsThisWeek(sessions)
+      const maxVol = Math.max(...rawBars.map((b) => b.vol), 1)
+      setWeeklyBars(
+        rawBars.map(({ d, vol }, i) => ({
+          day: WEEK_LABELS[i],
+          heightPct: vol > 0 ? Math.max(8, Math.round((vol / maxVol) * 100)) : 4,
+          color: vol > 0 ? colors.accentLime : colors.border,
+          isToday: d.toDateString() === new Date().toDateString(),
+        }))
+      )
+    } catch (e) {
+      console.error('Failed to load weekly volume', e)
+    }
   }
 
   const suggestedIndex = recentWorkouts.length % TEMPLATES.length
