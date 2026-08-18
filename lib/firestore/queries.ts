@@ -227,6 +227,29 @@ export async function getWeeklyVolume(): Promise<{ day: string; volume: number }
     .sort((a, b) => a.day.localeCompare(b.day))
 }
 
+/** Per-day completed-set volume for the last `days` days (ISO date -> kg). */
+export async function getVolumeByDayInRange(days: number): Promise<{ date: string; volume: number }[]> {
+  const since = Date.now() - days * 24 * 60 * 60 * 1000
+  const snap = await getDocs(
+    query(col('workouts'), where('started_at', '>=', since), orderBy('started_at'))
+  )
+  const byDay = new Map<string, number>()
+  for (const d of snap.docs) {
+    const data = d.data()
+    const day = new Date(data.started_at).toISOString().slice(0, 10)
+    let vol = byDay.get(day) ?? 0
+    for (const ex of (data.exercises || [])) {
+      for (const s of (ex.sets || [])) {
+        if (s.completed && s.weight_kg != null && s.reps != null) vol += s.weight_kg * s.reps
+      }
+    }
+    byDay.set(day, vol)
+  }
+  return Array.from(byDay.entries())
+    .map(([date, volume]) => ({ date, volume }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+}
+
 /** Total completed-set volume and distinct training-session days within [startDate, endDate] (inclusive, ISO dates). */
 export async function getWorkoutVolumeInRange(startDate: string, endDate: string): Promise<{ volume: number; sessions: number }> {
   const startMs = new Date(`${startDate}T00:00:00`).getTime()

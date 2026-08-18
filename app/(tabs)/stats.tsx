@@ -426,7 +426,7 @@ function OverviewTab({
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Body Weight</Text>
+        <CardHeaderLink title="Body Weight" label="View More" onPress={() => router.push('/stats/bodyweight')} />
         {avgWeightCur == null ? (
           <Text style={styles.emptyText}>Log weight this week to see the trend</Text>
         ) : (
@@ -438,7 +438,7 @@ function OverviewTab({
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Training Volume</Text>
+        <CardHeaderLink title="Training Volume" label="View More" onPress={() => router.push('/stats/volume')} />
         <Text style={styles.bigStat}>{fmtVol(curVolTotal)} kg</Text>
         <Text style={styles.chartCaption}>
           {prevVolTotal != null ? deltaLine(curVolTotal, prevVolTotal, ' kg') : 'No data for last week yet'}

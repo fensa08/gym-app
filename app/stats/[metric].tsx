@@ -3,9 +3,10 @@ import { useState, useEffect, useCallback } from 'react'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
+import { format } from 'date-fns'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { getBodyWeightLogs, getRecoveryLogs, getNutritionLogs } from '../../lib/firestore/queriesHealth'
-import { getExerciseHistory } from '../../lib/firestore/queries'
+import { getExerciseHistory, getVolumeByDayInRange } from '../../lib/firestore/queries'
 import {
   rollingAverageByDate,
   rollingAverageIndexed,
@@ -15,6 +16,7 @@ import {
   type Granularity,
 } from '../../lib/statsAggregation'
 import { LineChart, BarWithLineChart } from '../../components/Charts'
+import type { BodyWeightLog } from '../../lib/types'
 
 const METRIC_TITLES: Record<string, string> = {
   bodyweight: 'Bodyweight',
@@ -23,6 +25,7 @@ const METRIC_TITLES: Record<string, string> = {
   sleep: 'Sleep Duration',
   'resting-hr': 'Resting Heart Rate',
   'progressive-overload': 'Progressive Overload',
+  volume: 'Training Volume',
 }
 
 export default function StatDetailScreen() {
@@ -32,16 +35,23 @@ export default function StatDetailScreen() {
   const [loading, setLoading] = useState(true)
   const [lineData, setLineData] = useState<{ x: number; y: number }[]>([])
   const [barData, setBarData] = useState<{ value: number; lineValue: number | null }[] | null>(null)
+  const [weightLogs, setWeightLogs] = useState<BodyWeightLog[]>([])
 
   const days = GRANULARITY_OPTIONS.find((g) => g.key === granularity)!.days
 
   const load = useCallback(async () => {
     setLoading(true)
     setBarData(null)
+    setWeightLogs([])
     if (metric === 'bodyweight') {
       const logs = await getBodyWeightLogs(days)
+      setWeightLogs(logs)
       const grouped = groupByPeriod(logs.map((l) => ({ date: l.date, value: l.weight_kg })), granularity)
       setLineData(grouped.map((p) => ({ x: new Date(p.date).getTime(), y: Math.round(p.value * 10) / 10 })))
+    } else if (metric === 'volume') {
+      const rows = await getVolumeByDayInRange(days)
+      const grouped = groupByPeriod(rows.map((r) => ({ date: r.date, value: r.volume })), granularity)
+      setLineData(grouped.map((p) => ({ x: new Date(p.date).getTime(), y: Math.round(p.value) })))
     } else if (metric === 'calories') {
       const logs = await getNutritionLogs(days)
       const points = logs.filter((l): l is typeof l & { calories: number } => l.calories != null).map((l) => ({ date: l.date, value: l.calories }))
@@ -120,6 +130,23 @@ export default function StatDetailScreen() {
             <LineChart data={lineData} height={220} width={320} />
           )}
         </View>
+
+        {metric === 'bodyweight' && weightLogs.length > 0 && (
+          <>
+            <Text style={styles.sectionLabel}>All Logged Weights</Text>
+            <View style={styles.card}>
+              {weightLogs
+                .slice()
+                .reverse()
+                .map((log, i) => (
+                  <View key={log.date} style={[styles.logRow, i < weightLogs.length - 1 && styles.logRowBorder]}>
+                    <Text style={styles.logDate}>{format(new Date(log.date), 'MMM d, yyyy')}</Text>
+                    <Text style={styles.logValue}>{log.weight_kg.toFixed(1)} kg</Text>
+                  </View>
+                ))}
+            </View>
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   )
@@ -154,4 +181,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyText: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.sm, textAlign: 'center', paddingVertical: sp.xl },
+  sectionLabel: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.sm, marginTop: sp.md, marginBottom: 10 },
+  logRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
+  logRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  logDate: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.sm },
+  logValue: { color: colors.textPrimary, fontFamily: fonts.monoSemiBold, fontSize: fs.md },
 })
