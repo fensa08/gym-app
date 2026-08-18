@@ -208,9 +208,6 @@ export default function StatsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.eyebrow}>Progress</Text>
-        <Text style={styles.title}>Your Stats</Text>
-
         <CategoryTabRow tabs={TABS} active={tab} onChange={setTab} />
 
         {tab === 'overview' && (
@@ -335,8 +332,6 @@ function OverviewTab({
   const avgFatCur = average(curLoggedDays.map((l) => l.fat_g!))
 
   const deficit = avgCalCur != null ? avgCalCur - calorieGoal : null
-  const adherencePct = Math.round((curLoggedDays.length / 7) * 100)
-
   const proteinDaysCur = curLoggedDays.filter((l) => l.protein_g != null)
   const proteinHitCur = proteinDaysCur.filter((l) => l.protein_g! >= proteinGoal)
   const proteinPct = proteinDaysCur.length > 0 ? Math.round((proteinHitCur.length / proteinDaysCur.length) * 100) : null
@@ -379,7 +374,6 @@ function OverviewTab({
           <Text style={styles.emptyText}>Loading…</Text>
         ) : (
           <View style={styles.statsRow}>
-            <StatChip label="Adherence" value={`${adherencePct}%`} />
             <StatChip label="Protein hit rate" value={proteinPct != null ? `${proteinPct}%` : '—'} />
             <StatChip label="Sessions" value={String(curTraining.sessions)} />
             <StatChip label="Volume" value={`${fmtVol(curVolTotal)} kg`} />
