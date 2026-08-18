@@ -15,7 +15,7 @@ import {
   GRANULARITY_OPTIONS,
   type Granularity,
 } from '../../lib/statsAggregation'
-import { LineChart, BarWithLineChart } from '../../components/Charts'
+import { LineChart, BarWithLineChart, niceTicks, integerTicks, sampleTicks } from '../../components/Charts'
 import type { BodyWeightLog } from '../../lib/types'
 
 const METRIC_TITLES: Record<string, string> = {
@@ -93,6 +93,19 @@ export default function StatDetailScreen() {
 
   const title = metric === 'progressive-overload' && name ? `${name} — Est. 1RM` : METRIC_TITLES[metric] ?? 'Stat Detail'
 
+  const calorieYAxis =
+    metric === 'calories' && barData && barData.length > 0
+      ? { ticks: niceTicks(Math.min(...barData.map((d) => d.value)), Math.max(...barData.map((d) => d.value))) }
+      : undefined
+  const bodyweightYAxis =
+    metric === 'bodyweight' && lineData.length >= 2
+      ? { ticks: integerTicks(Math.min(...lineData.map((d) => d.y)), Math.max(...lineData.map((d) => d.y))) }
+      : undefined
+  const bodyweightXAxis =
+    metric === 'bodyweight' && lineData.length >= 2
+      ? { ticks: sampleTicks(lineData.map((d) => d.x)), format: (v: number) => format(new Date(v), 'dd/MM') }
+      : undefined
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
@@ -122,12 +135,12 @@ export default function StatDetailScreen() {
             barData.length === 0 ? (
               <Text style={styles.emptyText}>No data logged in this range yet</Text>
             ) : (
-              <BarWithLineChart data={barData} height={220} width={320} />
+              <BarWithLineChart data={barData} height={220} width={320} yAxis={calorieYAxis} />
             )
           ) : lineData.length < 2 ? (
             <Text style={styles.emptyText}>No data logged in this range yet</Text>
           ) : (
-            <LineChart data={lineData} height={220} width={320} />
+            <LineChart data={lineData} height={220} width={320} yAxis={bodyweightYAxis} xAxis={bodyweightXAxis} />
           )}
         </View>
 
@@ -182,7 +195,7 @@ const styles = StyleSheet.create({
   },
   emptyText: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.sm, textAlign: 'center', paddingVertical: sp.xl },
   sectionLabel: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.sm, marginTop: sp.md, marginBottom: 10 },
-  logRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
+  logRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 16 },
   logRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
   logDate: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.sm },
   logValue: { color: colors.textPrimary, fontFamily: fonts.monoSemiBold, fontSize: fs.md },

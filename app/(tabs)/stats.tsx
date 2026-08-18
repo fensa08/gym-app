@@ -44,7 +44,7 @@ import {
   type Trend,
 } from '../../lib/statsAggregation'
 import { CategoryTabRow } from '../../components/CategoryTabRow'
-import { LineChart, BarChart, DivergingBarChart, BarWithLineChart, type LineSeries } from '../../components/Charts'
+import { LineChart, BarChart, DivergingBarChart, BarWithLineChart, niceTicks, integerTicks, sampleTicks, type LineSeries } from '../../components/Charts'
 import { StatChip } from '../../components/Cards'
 import type { BodyWeightLog, BodyCompositionLog, RecoveryLog, NutritionLog } from '../../lib/types'
 
@@ -350,6 +350,11 @@ function OverviewTab({
     const iso = d.toISOString().slice(0, 10)
     return { label: WEEK_LABELS[i], value: calorieByDate.get(iso) ?? 0 }
   })
+  const loggedCalorieValues = calorieBars.filter((b) => b.value > 0).map((b) => b.value)
+  const calorieYAxis =
+    loggedCalorieValues.length > 0
+      ? { ticks: niceTicks(Math.min(...loggedCalorieValues, calorieGoal), Math.max(...loggedCalorieValues, calorieGoal)) }
+      : undefined
 
   return (
     <>
@@ -387,7 +392,7 @@ function OverviewTab({
           <Text style={styles.emptyText}>Log meals this week to see your calorie average</Text>
         ) : (
           <>
-            <BarChart data={calorieBars} goalLine={calorieGoal} height={110} />
+            <BarChart data={calorieBars} goalLine={calorieGoal} height={110} yAxis={calorieYAxis} />
             <Text style={styles.chartCaption}>Dashed line = {calorieGoal} kcal goal</Text>
             <View style={styles.calorieSplitRow}>
               <View style={styles.calorieSplitHalf}>
@@ -762,6 +767,15 @@ function BodyTab({
   const weightTrend = classifyTrend(weeklyWeights.map((w) => w.average))
   const router = useRouter()
 
+  const weeklyWeightYAxis =
+    weeklyWeightSeries.length >= 2
+      ? { ticks: integerTicks(Math.min(...weeklyWeightSeries.map((p) => p.y)), Math.max(...weeklyWeightSeries.map((p) => p.y))) }
+      : undefined
+  const weeklyWeightXAxis =
+    weeklyWeightSeries.length >= 2
+      ? { ticks: sampleTicks(weeklyWeightSeries.map((p) => p.x)), format: (v: number) => format(new Date(v), 'dd/MM') }
+      : undefined
+
   return (
     <>
       <View style={styles.card}>
@@ -770,7 +784,7 @@ function BodyTab({
           <Text style={styles.emptyText}>Log weight across a couple of weeks to see the trend</Text>
         ) : (
           <>
-            <LineChart data={weeklyWeightSeries} height={110} />
+            <LineChart data={weeklyWeightSeries} height={110} yAxis={weeklyWeightYAxis} xAxis={weeklyWeightXAxis} />
             <Text style={styles.chartCaption}>
               {trendArrow(weightTrend)} {weightTrend} · {weeklyWeightSeries[weeklyWeightSeries.length - 1].y} kg this week
             </Text>
@@ -920,6 +934,11 @@ function NutritionTab({
     .map((l) => ({ date: l.date, value: l.calories }))
   const calorieRolling = rollingAverageByDate(caloriePoints, 7)
   const calorieBarData = caloriePoints.map((p, i) => ({ value: p.value, lineValue: calorieRolling[i]?.value ?? null }))
+  const calorieTrendYAxis =
+    caloriePoints.length > 0
+      ? { ticks: niceTicks(Math.min(...caloriePoints.map((p) => p.value)), Math.max(...caloriePoints.map((p) => p.value))) }
+      : undefined
+  const diffYAxis = diffBars.length > 0 ? { ticks: niceTicks(0, Math.max(...diffBars.map((b) => Math.abs(b.value))), 3) } : undefined
 
   // Protein g/kg bodyweight, target band 1.6-2.2.
   const proteinPerKg = proteinPerKgSeries(
@@ -937,7 +956,7 @@ function NutritionTab({
           <Text style={styles.emptyText}>Log meals to see your calorie trend</Text>
         ) : (
           <>
-            <BarWithLineChart data={calorieBarData} height={100} />
+            <BarWithLineChart data={calorieBarData} height={100} yAxis={calorieTrendYAxis} />
             <Text style={styles.chartCaption}>Bars = daily calories · line = 7d rolling average</Text>
           </>
         )}
@@ -948,7 +967,7 @@ function NutritionTab({
         {diffBars.length === 0 ? (
           <Text style={styles.emptyText}>Log meals to see your calorie trend</Text>
         ) : (
-          <DivergingBarChart data={diffBars} height={90} />
+          <DivergingBarChart data={diffBars} height={90} yAxis={diffYAxis} />
         )}
         <Text style={styles.chartCaption}>Above the line = surplus vs goal · below = deficit</Text>
       </View>

@@ -184,7 +184,7 @@ export default function NutritionScreen() {
             const dateStr = iso(d)
             const l = dayMap.get(dateStr)
             const logged = (l?.calories ?? 0) > 0
-            const onTarget = logged && Math.abs((l!.calories ?? 0) - calGoal) <= calGoal * 0.1
+            const onTarget = logged && (l!.calories ?? 0) <= calGoal
             const selected = dateStr === selectedDate
             return (
               <TouchableOpacity
