@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { ActiveExercise, LoggedSet } from '../types'
 
 type WorkoutView = 'logging' | 'picker' | 'resting' | 'rpe' | 'summary'
@@ -34,6 +36,7 @@ interface WorkoutStore {
   addExercise(exercise: ActiveExercise): void
   addSet(exerciseIndex: number, set: LoggedSet): void
   removeSet(exerciseIndex: number, setIndex: number): void
+  insertSet(exerciseIndex: number, setIndex: number, set: LoggedSet): void
   startRestTimer(duration?: number): void
   stopRestTimer(): void
   setRestDuration(seconds: number): void
@@ -44,7 +47,9 @@ interface WorkoutStore {
   reset(): void
 }
 
-export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
+export const useWorkoutStore = create<WorkoutStore>()(
+  persist(
+    (set, get) => ({
   isActive: false,
   workoutId: null,
   workoutName: '',
@@ -102,6 +107,18 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
     set({ exercises })
   },
 
+  insertSet(exerciseIndex, setIndex, loggedSet) {
+    const exercises = [...get().exercises]
+    const ex = { ...exercises[exerciseIndex] }
+    ex.loggedSets = [
+      ...ex.loggedSets.slice(0, setIndex),
+      loggedSet,
+      ...ex.loggedSets.slice(setIndex),
+    ]
+    exercises[exerciseIndex] = ex
+    set({ exercises })
+  },
+
   startRestTimer(duration) {
     const d = duration ?? get().restDuration
     set({ workoutView: 'resting', restDuration: d, restTimerEnd: Date.now() + d * 1000 })
@@ -138,4 +155,26 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
       supersetCount: 0,
     })
   },
-}))
+    }),
+    {
+      name: 'workout:active-session',
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (s) => ({
+        isActive: s.isActive,
+        workoutId: s.workoutId,
+        workoutName: s.workoutName,
+        startedAt: s.startedAt,
+        exercises: s.exercises,
+        currentExerciseIndex: s.currentExerciseIndex,
+        workoutView: s.workoutView,
+        restDuration: s.restDuration,
+        restTimerEnd: s.restTimerEnd,
+        restLog: s.restLog,
+        overallRpe: s.overallRpe,
+        perExerciseRpe: s.perExerciseRpe,
+        activeSuperset: s.activeSuperset,
+        supersetCount: s.supersetCount,
+      }),
+    }
+  )
+)

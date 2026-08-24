@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput } from 'react-native'
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native'
 import { useRouter, useFocusEffect } from 'expo-router'
 import { useState, useCallback } from 'react'
 import { Ionicons } from '@expo/vector-icons'
@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { getFoods, deleteFood } from '../../lib/firestore/queriesHealth'
 import type { Food } from '../../lib/types'
+import { errorMessage } from '../../lib/errors'
 
 export default function FoodsLibraryScreen() {
   const router = useRouter()
@@ -14,13 +15,21 @@ export default function FoodsLibraryScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      getFoods().then(setFoods)
+      getFoods().then(setFoods).catch((err) => {
+        console.error(err)
+        Alert.alert('Failed to load foods', errorMessage(err))
+      })
     }, [])
   )
 
   async function handleDelete(id: string) {
-    await deleteFood(id)
-    setFoods(prev => prev.filter(f => f.id !== id))
+    try {
+      await deleteFood(id)
+      setFoods(prev => prev.filter(f => f.id !== id))
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to delete food', errorMessage(err))
+    }
   }
 
   const filtered = foods.filter(f => f.name.toLowerCase().includes(search.trim().toLowerCase()))

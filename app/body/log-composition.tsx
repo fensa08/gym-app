@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView } from 'react-native'
+import { View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView, Alert } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useState, useEffect } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -7,6 +7,7 @@ import { insertBodyCompositionLog, getUserGoals, getLatestBodyComposition } from
 import { PhotoPicker } from '../../components/PhotoPicker'
 import { CIRCUMFERENCE_FIELDS } from './index'
 import type { BodyFatMethod, BodyCompositionLog } from '../../lib/types'
+import { errorMessage } from '../../lib/errors'
 
 const METHODS: { key: BodyFatMethod; label: string }[] = [
   { key: 'manual', label: 'Manual' },
@@ -26,11 +27,17 @@ export default function LogCompositionModal() {
   const [photoFront, setPhotoFront] = useState<string | null>(null)
   const [photoSide, setPhotoSide] = useState<string | null>(null)
   const [photoBack, setPhotoBack] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     ;(async () => {
-      const [goals, latest] = await Promise.all([getUserGoals(), getLatestBodyComposition()])
-      setHeightCm(String(latest?.height_cm ?? goals.height_cm))
+      try {
+        const [goals, latest] = await Promise.all([getUserGoals(), getLatestBodyComposition()])
+        setHeightCm(String(latest?.height_cm ?? goals.height_cm))
+      } catch (err) {
+        console.error(err)
+        Alert.alert('Failed to load defaults', errorMessage(err))
+      }
     })()
   }, [])
 
@@ -39,22 +46,30 @@ export default function LogCompositionModal() {
   }
 
   async function handleSave() {
-    await insertBodyCompositionLog({
-      body_fat_pct: bodyFatPct ? parseFloat(bodyFatPct) : null,
-      method,
-      neck_cm: method === 'navy' && neckCm ? parseFloat(neckCm) : null,
-      height_cm: method === 'navy' && heightCm ? parseFloat(heightCm) : null,
-      chest_cm: circ.chest_cm ? parseFloat(circ.chest_cm) : null,
-      waist_cm: circ.waist_cm ? parseFloat(circ.waist_cm) : null,
-      hips_cm: circ.hips_cm ? parseFloat(circ.hips_cm) : null,
-      arms_cm: circ.arms_cm ? parseFloat(circ.arms_cm) : null,
-      thighs_cm: circ.thighs_cm ? parseFloat(circ.thighs_cm) : null,
-      calves_cm: circ.calves_cm ? parseFloat(circ.calves_cm) : null,
-      photo_front: photoFront,
-      photo_side: photoSide,
-      photo_back: photoBack,
-    })
-    router.back()
+    setSaving(true)
+    try {
+      await insertBodyCompositionLog({
+        body_fat_pct: bodyFatPct ? parseFloat(bodyFatPct) : null,
+        method,
+        neck_cm: method === 'navy' && neckCm ? parseFloat(neckCm) : null,
+        height_cm: method === 'navy' && heightCm ? parseFloat(heightCm) : null,
+        chest_cm: circ.chest_cm ? parseFloat(circ.chest_cm) : null,
+        waist_cm: circ.waist_cm ? parseFloat(circ.waist_cm) : null,
+        hips_cm: circ.hips_cm ? parseFloat(circ.hips_cm) : null,
+        arms_cm: circ.arms_cm ? parseFloat(circ.arms_cm) : null,
+        thighs_cm: circ.thighs_cm ? parseFloat(circ.thighs_cm) : null,
+        calves_cm: circ.calves_cm ? parseFloat(circ.calves_cm) : null,
+        photo_front: photoFront,
+        photo_side: photoSide,
+        photo_back: photoBack,
+      })
+      router.back()
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to save measurements', errorMessage(err))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -145,8 +160,8 @@ export default function LogCompositionModal() {
           </View>
         </ScrollView>
 
-        <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.88}>
-          <Text style={styles.saveBtnText}>Save</Text>
+        <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.88} disabled={saving}>
+          <Text style={styles.saveBtnText}>{saving ? 'Saving...' : 'Save'}</Text>
         </TouchableOpacity>
       </View>
     </View>

@@ -1,6 +1,6 @@
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
-import { View, ActivityIndicator, AppState } from 'react-native'
+import { View, Text, ActivityIndicator, AppState } from 'react-native'
 import { useEffect } from 'react'
 import { useFonts as useCormorant, CormorantGaramond_400Regular, CormorantGaramond_500Medium } from '@expo-google-fonts/cormorant-garamond'
 import { useFonts as useInter, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter'
@@ -15,7 +15,7 @@ export default function RootLayout() {
   const [interLoaded] = useInter({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold })
   const [monoLoaded] = useJetBrainsMono({ JetBrainsMono_400Regular, JetBrainsMono_600SemiBold, JetBrainsMono_700Bold })
 
-  const { user, loading, init } = useAuthStore()
+  const { user, loading, error: authError, init } = useAuthStore()
   const router = useRouter()
   const segments = useSegments()
 
@@ -30,7 +30,7 @@ export default function RootLayout() {
     if (!user && !inAuthGroup) {
       router.replace('/login')
     } else if (user && inAuthGroup) {
-      seedExercises()
+      seedExercises().catch((err) => console.error('Failed to seed exercises:', err))
       router.replace('/(tabs)')
     }
   }, [user, loading, segments])
@@ -49,8 +49,9 @@ export default function RootLayout() {
 
   if (!fontsReady || loading || needsRedirect) {
     return (
-      <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 }}>
         <ActivityIndicator color={colors.accentMid} />
+        {authError && <Text style={{ color: colors.textSecondary, textAlign: 'center' }}>{authError}</Text>}
       </View>
     )
   }

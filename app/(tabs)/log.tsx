@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Animated,
   PanResponder,
+  Alert,
 } from 'react-native'
 import { useState, useCallback, useRef } from 'react'
 import { useFocusEffect, useRouter } from 'expo-router'
@@ -14,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { format } from 'date-fns'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { getWorkoutHistoryWithStats, deleteWorkout } from '../../lib/firestore/queries'
+import { errorMessage } from '../../lib/errors'
 
 type Session = Awaited<ReturnType<typeof getWorkoutHistoryWithStats>>[number]
 
@@ -25,15 +27,23 @@ export default function LogScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      getWorkoutHistoryWithStats(40).then(setSessions)
+      getWorkoutHistoryWithStats(40).then(setSessions).catch((err) => {
+        console.error(err)
+        Alert.alert('Failed to load training log', errorMessage(err))
+      })
     }, [])
   )
 
   async function handleDelete(id: string) {
+    const prevSessions = sessions
     setSessions((prev) => prev.filter((s) => s.id !== id))
     try {
       await deleteWorkout(id)
-    } catch (_) {}
+    } catch (err) {
+      console.error(err)
+      setSessions(prevSessions)
+      Alert.alert('Failed to delete workout', errorMessage(err))
+    }
   }
 
   return (

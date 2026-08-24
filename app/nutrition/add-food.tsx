@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView, Keyboard } from 'react-native'
+import { View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView, Keyboard, Alert } from 'react-native'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Ionicons } from '@expo/vector-icons'
@@ -7,6 +7,7 @@ import * as Haptics from 'expo-haptics'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { getFoods, addFoodToMeal, addQuickItem } from '../../lib/firestore/queriesHealth'
 import type { Food } from '../../lib/types'
+import { errorMessage } from '../../lib/errors'
 
 const MEAL_ORDER = ['Breakfast', 'Lunch', 'Snack', 'Dinner']
 
@@ -47,7 +48,10 @@ export default function AddFoodModal() {
   }
 
   useEffect(() => {
-    getFoods().then(setFoods)
+    getFoods().then(setFoods).catch((err) => {
+      console.error(err)
+      Alert.alert('Failed to load foods', errorMessage(err))
+    })
     const t = setTimeout(() => inputRef.current?.focus(), 250)
     return () => clearTimeout(t)
   }, [])
@@ -77,13 +81,19 @@ export default function AddFoodModal() {
   async function confirmAdd() {
     if (!selection) return
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-    if (selection.type === 'food') {
-      const grams = parsed.grams ?? selection.food.last_grams ?? 100
-      await addFoodToMeal(meal, selection.food, grams, date)
-      showFlash(`✓ ${selection.food.name} · ${grams}g → ${meal}`)
-    } else if (parsed.kcal != null) {
-      await addQuickItem(meal, { calories: parsed.kcal }, date)
-      showFlash(`✓ ${parsed.kcal} kcal → ${meal}`)
+    try {
+      if (selection.type === 'food') {
+        const grams = parsed.grams ?? selection.food.last_grams ?? 100
+        await addFoodToMeal(meal, selection.food, grams, date)
+        showFlash(`✓ ${selection.food.name} · ${grams}g → ${meal}`)
+      } else if (parsed.kcal != null) {
+        await addQuickItem(meal, { calories: parsed.kcal }, date)
+        showFlash(`✓ ${parsed.kcal} kcal → ${meal}`)
+      }
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to add food', errorMessage(err))
+      return
     }
     setQuery('')
     setSelection(null)

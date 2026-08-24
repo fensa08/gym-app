@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Platform } from 'react-native'
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Platform, Alert } from 'react-native'
 import { useRouter, useFocusEffect } from 'expo-router'
 import { useState, useCallback } from 'react'
 import { Ionicons } from '@expo/vector-icons'
@@ -14,6 +14,7 @@ import {
   syncHealthKitIfNeeded,
 } from '../../lib/healthkitSync'
 import type { RecoveryLog, MuscleGroupKey } from '../../lib/types'
+import { errorMessage } from '../../lib/errors'
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const EMPTY_SORENESS: Record<MuscleGroupKey, 0 | 1 | 2 | 3> = {
@@ -39,16 +40,21 @@ export default function RecoveryHubScreen() {
   )
 
   async function loadData() {
-    const [l, week, connected, hadData] = await Promise.all([
-      getLatestRecoveryLog(),
-      getRecoveryLogs(7),
-      isHealthKitConnected(),
-      hasHealthKitData(),
-    ])
-    setLatest(l)
-    setWeekLogs(week)
-    setHkConnected(connected)
-    setHkHasData(hadData)
+    try {
+      const [l, week, connected, hadData] = await Promise.all([
+        getLatestRecoveryLog(),
+        getRecoveryLogs(7),
+        isHealthKitConnected(),
+        hasHealthKitData(),
+      ])
+      setLatest(l)
+      setWeekLogs(week)
+      setHkConnected(connected)
+      setHkHasData(hadData)
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to load recovery data', errorMessage(err))
+    }
   }
 
   async function handleConnectHealthKit() {
@@ -56,6 +62,9 @@ export default function RecoveryHubScreen() {
     try {
       const result = await connectHealthKit()
       if (result === 'connected') await loadData()
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Apple Health', errorMessage(err))
     } finally {
       setHkConnecting(false)
     }

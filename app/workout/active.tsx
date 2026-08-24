@@ -54,6 +54,7 @@ export default function ActiveWorkoutScreen() {
     addExercise,
     addSet,
     removeSet,
+    insertSet,
     startSuperset,
     endSuperset,
     startRestTimer,
@@ -120,6 +121,7 @@ export default function ActiveWorkoutScreen() {
               await deleteSet(workoutId, ex.workoutExerciseId, set.id)
             } catch (err) {
               console.error('Failed to delete set:', err)
+              insertSet(exerciseIndex, setIndex, set)
               Alert.alert('Could not delete set', errorMessage(err))
             }
           }
@@ -185,6 +187,7 @@ export default function ActiveWorkoutScreen() {
     } catch (err) {
       console.error('Failed to save workout:', err)
       Alert.alert('Could not save workout', errorMessage(err))
+      return
     }
     storeFinish()
   }
@@ -197,7 +200,11 @@ export default function ActiveWorkoutScreen() {
     setShowDiscardModal(false)
     try {
       if (workoutId) await deleteWorkout(workoutId!)
-    } catch (_) {}
+    } catch (err) {
+      console.error('Failed to discard workout:', err)
+      Alert.alert('Could not discard workout', errorMessage(err))
+      return
+    }
     reset()
     router.back()
   }

@@ -17,6 +17,7 @@ import {
 } from '../../lib/statsAggregation'
 import { LineChart, BarWithLineChart, niceTicks, integerTicks, sampleTicks } from '../../components/Charts'
 import type { BodyWeightLog } from '../../lib/types'
+import { errorMessage } from '../../lib/errors'
 
 const METRIC_TITLES: Record<string, string> = {
   bodyweight: 'Bodyweight',
@@ -36,13 +37,16 @@ export default function StatDetailScreen() {
   const [lineData, setLineData] = useState<{ x: number; y: number }[]>([])
   const [barData, setBarData] = useState<{ value: number; lineValue: number | null }[] | null>(null)
   const [weightLogs, setWeightLogs] = useState<BodyWeightLog[]>([])
+  const [error, setError] = useState<string | null>(null)
 
   const days = GRANULARITY_OPTIONS.find((g) => g.key === granularity)!.days
 
   const load = useCallback(async () => {
     setLoading(true)
+    setError(null)
     setBarData(null)
     setWeightLogs([])
+    try {
     if (metric === 'bodyweight') {
       const logs = await getBodyWeightLogs(days)
       setWeightLogs(logs)
@@ -83,6 +87,10 @@ export default function StatDetailScreen() {
       const history = await getExerciseHistory(exerciseId, days)
       const grouped = groupByPeriod(history.map((p) => ({ date: p.date, value: p.estimated1RM })), granularity)
       setLineData(grouped.map((p) => ({ x: new Date(p.date).getTime(), y: Math.round(p.value * 10) / 10 })))
+    }
+    } catch (err) {
+      console.error(err)
+      setError(errorMessage(err))
     }
     setLoading(false)
   }, [metric, exerciseId, days, granularity])
@@ -131,6 +139,8 @@ export default function StatDetailScreen() {
         <View style={styles.card}>
           {loading ? (
             <Text style={styles.emptyText}>Loading…</Text>
+          ) : error ? (
+            <Text style={styles.emptyText}>{error}</Text>
           ) : barData != null ? (
             barData.length === 0 ? (
               <Text style={styles.emptyText}>No data logged in this range yet</Text>

@@ -32,6 +32,7 @@ export default function BodyHubScreen() {
   const [latestComp, setLatestComp] = useState<BodyCompositionLog | null>(null)
   const [prevComp, setPrevComp] = useState<BodyCompositionLog | null>(null)
   const [goals, setGoals] = useState<UserGoals | null>(null)
+  const [loadErrors, setLoadErrors] = useState<string[]>([])
 
   useFocusEffect(
     useCallback(() => {
@@ -47,16 +48,18 @@ export default function BodyHubScreen() {
       getPreviousBodyComposition(),
       getUserGoals(),
     ])
+    const errors: string[] = []
     if (w.status === 'fulfilled') setWeights(w.value)
-    else console.error('Failed to load body weight logs', w.reason)
+    else { console.error('Failed to load body weight logs', w.reason); errors.push('weight history') }
     if (c.status === 'fulfilled') setComps(c.value)
-    else console.error('Failed to load body composition history', c.reason)
+    else { console.error('Failed to load body composition history', c.reason); errors.push('body composition history') }
     if (latest.status === 'fulfilled') setLatestComp(latest.value)
-    else console.error('Failed to load latest body composition', latest.reason)
+    else { console.error('Failed to load latest body composition', latest.reason); errors.push('latest measurements') }
     if (prev.status === 'fulfilled') setPrevComp(prev.value)
-    else console.error('Failed to load previous body composition', prev.reason)
+    else { console.error('Failed to load previous body composition', prev.reason); errors.push('previous measurements') }
     if (g.status === 'fulfilled') setGoals(g.value)
-    else console.error('Failed to load user goals', g.reason)
+    else { console.error('Failed to load user goals', g.reason); errors.push('goals') }
+    setLoadErrors(errors)
   }
 
   const heightCm = latestComp?.height_cm ?? goals?.height_cm ?? 178
@@ -126,6 +129,14 @@ export default function BodyHubScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {loadErrors.length > 0 && (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorBannerText}>
+              Couldn't load: {loadErrors.join(', ')}. Pull to refresh or try again later.
+            </Text>
+          </View>
+        )}
+
         {/* ── Goal weight ── */}
         {goalWeight != null && latestWeight != null && (
           <View style={styles.card}>
@@ -298,6 +309,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     borderRadius: r.lg, padding: sp.md, marginBottom: sp.md,
   },
+  errorBanner: {
+    backgroundColor: 'rgba(224,87,92,0.08)', borderWidth: 1, borderColor: 'rgba(224,87,92,0.25)',
+    borderRadius: r.md, padding: sp.sm, marginBottom: sp.md,
+  },
+  errorBannerText: { color: colors.error, fontFamily: fonts.sans, fontSize: fs.xs },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: sp.sm },
   cardTitle: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.sm },
   legendRow: { flexDirection: 'row', gap: 10 },

@@ -1,9 +1,10 @@
-import { View, Text, TouchableOpacity, StyleSheet, TextInput } from 'react-native'
+import { View, Text, TouchableOpacity, StyleSheet, TextInput, Alert } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useState, useEffect, useRef } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { upsertBodyWeightLog, getLatestBodyWeight } from '../../lib/firestore/queriesHealth'
+import { errorMessage } from '../../lib/errors'
 
 export default function LogWeightModal() {
   const router = useRouter()
@@ -15,11 +16,17 @@ export default function LogWeightModal() {
   const [notesOpen, setNotesOpen] = useState(false)
   const [notes, setNotes] = useState('')
   const inputRef = useRef<TextInput>(null)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    getLatestBodyWeight().then((w) => {
-      if (w) setWeight(w.weight_kg)
-    })
+    getLatestBodyWeight()
+      .then((w) => {
+        if (w) setWeight(w.weight_kg)
+      })
+      .catch((err) => {
+        console.error(err)
+        Alert.alert('Failed to load weight', errorMessage(err))
+      })
   }, [])
 
   function bump(delta: number) {
@@ -41,10 +48,18 @@ export default function LogWeightModal() {
   }
 
   async function handleSave() {
-    const date = new Date()
-    if (day === 'yesterday') date.setDate(date.getDate() - 1)
-    await upsertBodyWeightLog(weight, date.toISOString().slice(0, 10), notes.trim() || null)
-    router.back()
+    setSaving(true)
+    try {
+      const date = new Date()
+      if (day === 'yesterday') date.setDate(date.getDate() - 1)
+      await upsertBodyWeightLog(weight, date.toISOString().slice(0, 10), notes.trim() || null)
+      router.back()
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to save weight', errorMessage(err))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -118,8 +133,8 @@ export default function LogWeightModal() {
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.88}>
-          <Text style={styles.saveBtnText}>Save</Text>
+        <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.88} disabled={saving}>
+          <Text style={styles.saveBtnText}>{saving ? 'Saving...' : 'Save'}</Text>
         </TouchableOpacity>
       </View>
     </View>

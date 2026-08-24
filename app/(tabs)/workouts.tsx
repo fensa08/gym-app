@@ -10,6 +10,7 @@ import { buildWorkoutFromTemplate } from '../../lib/workoutHelpers'
 import { TEMPLATES } from '../../lib/templates'
 import type { WorkoutTemplate } from '../../lib/templates'
 import type { Workout } from '../../lib/types'
+import { errorMessage } from '../../lib/errors'
 
 export default function WorkoutsScreen() {
   const router = useRouter()
@@ -18,8 +19,14 @@ export default function WorkoutsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      getRecentWorkouts(30).then(setRecentWorkouts)
-      getUserPrograms().then(setCustomPrograms)
+      getRecentWorkouts(30).then(setRecentWorkouts).catch((err) => {
+        console.error(err)
+        Alert.alert('Failed to load workouts', errorMessage(err))
+      })
+      getUserPrograms().then(setCustomPrograms).catch((err) => {
+        console.error(err)
+        Alert.alert('Failed to load programs', errorMessage(err))
+      })
     }, [])
   )
 
@@ -67,7 +74,10 @@ export default function WorkoutsScreen() {
           try {
             await deleteUserProgram(program.id)
             setCustomPrograms((prev) => prev.filter((p) => p.id !== program.id))
-          } catch (_) {}
+          } catch (err) {
+            console.error(err)
+            Alert.alert('Failed to delete program', errorMessage(err))
+          }
         },
       },
     ])

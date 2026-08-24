@@ -1,9 +1,10 @@
-import { View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView } from 'react-native'
+import { View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView, Alert } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useState, useEffect } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { getUserGoals, updateUserGoals } from '../../lib/firestore/queriesHealth'
+import { errorMessage } from '../../lib/errors'
 
 export default function GoalsEditModal() {
   const router = useRouter()
@@ -15,30 +16,44 @@ export default function GoalsEditModal() {
   const [fat, setFat] = useState('')
   const [fiber, setFiber] = useState('')
   const [loaded, setLoaded] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    getUserGoals().then((g) => {
-      setCalories(String(g.calorie_goal))
-      setProtein(String(g.protein_goal))
-      setCarbs(String(g.carbs_goal))
-      setFat(String(g.fat_goal))
-      setFiber(String(g.fiber_goal))
-      setLoaded(true)
-    })
+    getUserGoals()
+      .then((g) => {
+        setCalories(String(g.calorie_goal))
+        setProtein(String(g.protein_goal))
+        setCarbs(String(g.carbs_goal))
+        setFat(String(g.fat_goal))
+        setFiber(String(g.fiber_goal))
+        setLoaded(true)
+      })
+      .catch((err) => {
+        console.error(err)
+        Alert.alert('Failed to load goals', errorMessage(err))
+      })
   }, [])
 
   const canSave = loaded && calories.trim().length > 0
 
   async function handleSave() {
     if (!canSave) return
-    await updateUserGoals({
-      calorie_goal: parseInt(calories, 10) || 0,
-      protein_goal: parseFloat(protein) || 0,
-      carbs_goal: parseFloat(carbs) || 0,
-      fat_goal: parseFloat(fat) || 0,
-      fiber_goal: parseFloat(fiber) || 0,
-    })
-    router.back()
+    setSaving(true)
+    try {
+      await updateUserGoals({
+        calorie_goal: parseInt(calories, 10) || 0,
+        protein_goal: parseFloat(protein) || 0,
+        carbs_goal: parseFloat(carbs) || 0,
+        fat_goal: parseFloat(fat) || 0,
+        fiber_goal: parseFloat(fiber) || 0,
+      })
+      router.back()
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to save goals', errorMessage(err))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -114,9 +129,9 @@ export default function GoalsEditModal() {
           style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
           onPress={handleSave}
           activeOpacity={0.88}
-          disabled={!canSave}
+          disabled={!canSave || saving}
         >
-          <Text style={styles.saveBtnText}>Save Goals</Text>
+          <Text style={styles.saveBtnText}>{saving ? 'Saving...' : 'Save Goals'}</Text>
         </TouchableOpacity>
       </View>
     </View>

@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native'
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Alert } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
 import { useState, useCallback } from 'react'
@@ -9,6 +9,7 @@ import { getRecentWorkouts, getAllPRs, getWorkoutStreak } from '../../lib/firest
 import { getUserGoals } from '../../lib/firestore/queriesHealth'
 import { isHealthKitConnected, connectHealthKit, disconnectHealthKit } from '../../lib/healthkitSync'
 import { useAuthStore } from '../../lib/store/auth'
+import { errorMessage } from '../../lib/errors'
 
 const SETTINGS: { label: string; value: string; badge?: boolean }[] = [
   { label: 'Units', value: 'Kilograms (kg)' },
@@ -36,18 +37,23 @@ export default function ProfileScreen() {
   )
 
   async function loadData() {
-    const [ws, prs, s, connected, goals] = await Promise.all([
-      getRecentWorkouts(1000),
-      getAllPRs(),
-      getWorkoutStreak(),
-      isHealthKitConnected(),
-      getUserGoals(),
-    ])
-    setWorkoutCount(ws.length)
-    setPrCount(prs.length)
-    setStreak(s)
-    setHkConnected(connected)
-    setCalorieGoal(goals.calorie_goal)
+    try {
+      const [ws, prs, s, connected, goals] = await Promise.all([
+        getRecentWorkouts(1000),
+        getAllPRs(),
+        getWorkoutStreak(),
+        isHealthKitConnected(),
+        getUserGoals(),
+      ])
+      setWorkoutCount(ws.length)
+      setPrCount(prs.length)
+      setStreak(s)
+      setHkConnected(connected)
+      setCalorieGoal(goals.calorie_goal)
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to load profile', errorMessage(err))
+    }
   }
 
   async function toggleHealthKit() {
@@ -60,6 +66,9 @@ export default function ProfileScreen() {
         const result = await connectHealthKit()
         setHkConnected(result === 'connected')
       }
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Apple Health', errorMessage(err))
     } finally {
       setHkBusy(false)
     }
@@ -69,6 +78,9 @@ export default function ProfileScreen() {
     setSignOutBusy(true)
     try {
       await signOut()
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Sign out failed', errorMessage(err))
     } finally {
       setSignOutBusy(false)
     }

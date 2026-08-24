@@ -1,9 +1,10 @@
-import { View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView } from 'react-native'
+import { View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView, Alert } from 'react-native'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import { useState, useEffect } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { createFood, updateFood, getFoods } from '../../lib/firestore/queriesHealth'
+import { errorMessage } from '../../lib/errors'
 
 export default function FoodEditModal() {
   const router = useRouter()
@@ -28,38 +29,53 @@ export default function FoodEditModal() {
   const [fat, setFat] = useState(!id ? params.fat ?? '' : '')
   const [fiber, setFiber] = useState(!id ? params.fiber ?? '' : '')
 
+  const [saving, setSaving] = useState(false)
+
   useEffect(() => {
     if (!id) return
-    getFoods().then(foods => {
-      const food = foods.find(f => f.id === id)
-      if (!food) return
-      setName(food.name)
-      setCalories(String(food.calories_per_100g))
-      setProtein(String(food.protein_per_100g))
-      setCarbs(String(food.carbs_per_100g))
-      setFat(String(food.fat_per_100g))
-      setFiber(String(food.fiber_per_100g ?? 0))
-    })
+    getFoods()
+      .then(foods => {
+        const food = foods.find(f => f.id === id)
+        if (!food) return
+        setName(food.name)
+        setCalories(String(food.calories_per_100g))
+        setProtein(String(food.protein_per_100g))
+        setCarbs(String(food.carbs_per_100g))
+        setFat(String(food.fat_per_100g))
+        setFiber(String(food.fiber_per_100g ?? 0))
+      })
+      .catch((err) => {
+        console.error(err)
+        Alert.alert('Failed to load food', errorMessage(err))
+      })
   }, [id])
 
   const canSave = name.trim().length > 0 && calories.trim().length > 0
 
   async function handleSave() {
     if (!canSave) return
-    const input = {
-      name: name.trim(),
-      calories_per_100g: parseFloat(calories) || 0,
-      protein_per_100g: parseFloat(protein) || 0,
-      carbs_per_100g: parseFloat(carbs) || 0,
-      fat_per_100g: parseFloat(fat) || 0,
-      fiber_per_100g: parseFloat(fiber) || 0,
+    setSaving(true)
+    try {
+      const input = {
+        name: name.trim(),
+        calories_per_100g: parseFloat(calories) || 0,
+        protein_per_100g: parseFloat(protein) || 0,
+        carbs_per_100g: parseFloat(carbs) || 0,
+        fat_per_100g: parseFloat(fat) || 0,
+        fiber_per_100g: parseFloat(fiber) || 0,
+      }
+      if (isEdit && id) {
+        await updateFood(id, input)
+      } else {
+        await createFood(input)
+      }
+      router.back()
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to save food', errorMessage(err))
+    } finally {
+      setSaving(false)
     }
-    if (isEdit && id) {
-      await updateFood(id, input)
-    } else {
-      await createFood(input)
-    }
-    router.back()
   }
 
   return (
@@ -141,9 +157,9 @@ export default function FoodEditModal() {
           style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
           onPress={handleSave}
           activeOpacity={0.88}
-          disabled={!canSave}
+          disabled={!canSave || saving}
         >
-          <Text style={styles.saveBtnText}>{isEdit ? 'Save Changes' : 'Add Food'}</Text>
+          <Text style={styles.saveBtnText}>{saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Add Food'}</Text>
         </TouchableOpacity>
       </View>
     </View>

@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal } from 'react-native'
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Alert } from 'react-native'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import { useEffect, useState } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { format, formatDuration, intervalToDuration } from 'date-fns'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { getWorkoutDetail, deleteWorkout, type WorkoutDetail } from '../../lib/firestore/queries'
+import { errorMessage } from '../../lib/errors'
 
 export default function WorkoutDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -13,14 +14,21 @@ export default function WorkoutDetailScreen() {
   const insets = useSafeAreaInsets()
   const [workout, setWorkout] = useState<WorkoutDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
 
   useEffect(() => {
     if (id) {
-      getWorkoutDetail(id).then((w) => {
-        setWorkout(w)
-        setLoading(false)
-      })
+      getWorkoutDetail(id)
+        .then((w) => {
+          setWorkout(w)
+          setLoading(false)
+        })
+        .catch((err) => {
+          console.error(err)
+          setLoadError(errorMessage(err))
+          setLoading(false)
+        })
     }
   }, [id])
 
@@ -38,7 +46,7 @@ export default function WorkoutDetailScreen() {
   if (!workout) {
     return (
       <View style={[styles.centered, { paddingTop: topInset }]}>
-        <Text style={styles.errorText}>Workout not found.</Text>
+        <Text style={styles.errorText}>{loadError ?? 'Workout not found.'}</Text>
       </View>
     )
   }
@@ -57,8 +65,11 @@ export default function WorkoutDetailScreen() {
     setShowDeleteModal(false)
     try {
       await deleteWorkout(id!)
-    } catch (_) {}
-    router.back()
+      router.back()
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to delete workout', errorMessage(err))
+    }
   }
 
   return (

@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native'
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native'
 import { useRouter, useFocusEffect } from 'expo-router'
 import { useState, useCallback } from 'react'
 import { Ionicons } from '@expo/vector-icons'
@@ -14,6 +14,7 @@ import {
   type Signal,
 } from '../../lib/insights'
 import { getStaleExercises, markStalenessResolved } from '../../lib/firestore/queriesHealth'
+import { errorMessage } from '../../lib/errors'
 
 export default function InsightsScreen() {
   const router = useRouter()
@@ -32,23 +33,33 @@ export default function InsightsScreen() {
   )
 
   async function loadData() {
-    const [bc, ready, bq, cal, stale] = await Promise.all([
-      getBodyCompositionSignal(),
-      getReadinessSignal(),
-      getBulkQualitySignal(),
-      getCalibrationSignal(),
-      getStaleExercises(),
-    ])
-    setBodyComp(bc)
-    setReadiness(ready)
-    setBulkQuality(bq)
-    setCalibration(cal)
-    setStaleExercises(stale)
+    try {
+      const [bc, ready, bq, cal, stale] = await Promise.all([
+        getBodyCompositionSignal(),
+        getReadinessSignal(),
+        getBulkQualitySignal(),
+        getCalibrationSignal(),
+        getStaleExercises(),
+      ])
+      setBodyComp(bc)
+      setReadiness(ready)
+      setBulkQuality(bq)
+      setCalibration(cal)
+      setStaleExercises(stale)
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to load insights', errorMessage(err))
+    }
   }
 
   async function handleResolve(exerciseId: string) {
-    await markStalenessResolved(exerciseId)
-    loadData()
+    try {
+      await markStalenessResolved(exerciseId)
+      loadData()
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to update', errorMessage(err))
+    }
   }
 
   return (

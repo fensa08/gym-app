@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native'
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native'
 import { useState, useCallback, useEffect } from 'react'
 import { useRouter, useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -47,6 +47,7 @@ import { CategoryTabRow } from '../../components/CategoryTabRow'
 import { LineChart, BarChart, DivergingBarChart, BarWithLineChart, niceTicks, integerTicks, sampleTicks, type LineSeries } from '../../components/Charts'
 import { StatChip } from '../../components/Cards'
 import type { BodyWeightLog, BodyCompositionLog, RecoveryLog, NutritionLog } from '../../lib/types'
+import { errorMessage } from '../../lib/errors'
 
 const WEEK_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 const BAR_HEIGHT = 100
@@ -137,70 +138,78 @@ export default function StatsScreen() {
 
   useEffect(() => {
     if (!selectedExerciseId) return
-    getExerciseHistory(selectedExerciseId, 90).then(setExerciseHistory)
+    getExerciseHistory(selectedExerciseId, 90).then(setExerciseHistory).catch((err) => {
+      console.error(err)
+      Alert.alert('Failed to load exercise history', errorMessage(err))
+    })
   }, [selectedExerciseId])
 
   async function loadData() {
-    const [volumeRows, allPrs, recent, monthly, mgVol, mgFreq, exercises] = await Promise.all([
-      getWeeklyVolume(),
-      getAllPRs(),
-      getRecentWorkouts(100),
-      getMonthlyVolume(),
-      getWeeklyVolumeByMuscleGroup(5),
-      getTrainingFrequencyByMuscleGroup(5),
-      getExercisesWithHistory(),
-    ])
-    setMgVolume(mgVol)
-    setMgFrequency(mgFreq)
-    setExerciseList(exercises)
-    setSelectedExerciseId((prev) => prev ?? exercises[0]?.exerciseId ?? null)
-    const today = new Date()
-    const monday = new Date(today)
-    monday.setDate(today.getDate() - ((today.getDay() + 6) % 7))
-    const volumeByDay = new Map(volumeRows.map((v) => [v.day, v.volume]))
-    const days = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(monday)
-      d.setDate(monday.getDate() + i)
-      return d
-    })
-    const isoDay = (d: Date) => d.toISOString().slice(0, 10)
-    const vols = days.map((d) => volumeByDay.get(isoDay(d)) ?? 0)
-    const maxVol = Math.max(...vols, 1)
-    setWeeklyBars(
-      vols.map((v, i) => ({
-        day: WEEK_LABELS[i],
-        heightPct: v > 0 ? Math.max(8, Math.round((v / maxVol) * 100)) : 4,
-        volume: v,
-      }))
-    )
-    setTotalWeekVol(vols.reduce((s, v) => s + v, 0))
-    setSessionsThisWeek(vols.filter((v) => v > 0).length)
-    setMonthlyVol(monthly)
-    setPrs(allPrs)
+    try {
+      const [volumeRows, allPrs, recent, monthly, mgVol, mgFreq, exercises] = await Promise.all([
+        getWeeklyVolume(),
+        getAllPRs(),
+        getRecentWorkouts(100),
+        getMonthlyVolume(),
+        getWeeklyVolumeByMuscleGroup(5),
+        getTrainingFrequencyByMuscleGroup(5),
+        getExercisesWithHistory(),
+      ])
+      setMgVolume(mgVol)
+      setMgFrequency(mgFreq)
+      setExerciseList(exercises)
+      setSelectedExerciseId((prev) => prev ?? exercises[0]?.exerciseId ?? null)
+      const today = new Date()
+      const monday = new Date(today)
+      monday.setDate(today.getDate() - ((today.getDay() + 6) % 7))
+      const volumeByDay = new Map(volumeRows.map((v) => [v.day, v.volume]))
+      const days = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(monday)
+        d.setDate(monday.getDate() + i)
+        return d
+      })
+      const isoDay = (d: Date) => d.toISOString().slice(0, 10)
+      const vols = days.map((d) => volumeByDay.get(isoDay(d)) ?? 0)
+      const maxVol = Math.max(...vols, 1)
+      setWeeklyBars(
+        vols.map((v, i) => ({
+          day: WEEK_LABELS[i],
+          heightPct: v > 0 ? Math.max(8, Math.round((v / maxVol) * 100)) : 4,
+          volume: v,
+        }))
+      )
+      setTotalWeekVol(vols.reduce((s, v) => s + v, 0))
+      setSessionsThisWeek(vols.filter((v) => v > 0).length)
+      setMonthlyVol(monthly)
+      setPrs(allPrs)
 
-    const goals = await getUserGoals()
-    setHeightCm(goals.height_cm)
-    setCalorieGoal(goals.calorie_goal)
-    setProteinGoal(goals.protein_goal)
-    setCarbsGoal(goals.carbs_goal)
-    setFatGoal(goals.fat_goal)
+      const goals = await getUserGoals()
+      setHeightCm(goals.height_cm)
+      setCalorieGoal(goals.calorie_goal)
+      setProteinGoal(goals.protein_goal)
+      setCarbsGoal(goals.carbs_goal)
+      setFatGoal(goals.fat_goal)
 
-    const [w, c, rec, nut, stale, calib, insight] = await Promise.all([
-      getBodyWeightLogs(30),
-      getBodyCompositionHistory(60),
-      getRecoveryLogs(30),
-      getNutritionLogs(30),
-      getStaleExercises(),
-      getMaintenanceCalibration(),
-      getTopInsight(),
-    ])
-    setWeights(w)
-    setComps(c)
-    setRecoveryLogs(rec)
-    setNutritionLogs(nut)
-    setStaleCount(stale.length)
-    setCalibrationReady(calib != null)
-    setTopInsight(insight)
+      const [w, c, rec, nut, stale, calib, insight] = await Promise.all([
+        getBodyWeightLogs(30),
+        getBodyCompositionHistory(60),
+        getRecoveryLogs(30),
+        getNutritionLogs(30),
+        getStaleExercises(),
+        getMaintenanceCalibration(),
+        getTopInsight(),
+      ])
+      setWeights(w)
+      setComps(c)
+      setRecoveryLogs(rec)
+      setNutritionLogs(nut)
+      setStaleCount(stale.length)
+      setCalibrationReady(calib != null)
+      setTopInsight(insight)
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to load stats', errorMessage(err))
+    }
   }
 
   const monthlyPct = Math.min(1, monthlyVol / MONTHLY_GOAL)
@@ -315,6 +324,11 @@ function OverviewTab({
       setPrevWeights(prevW)
       setCurTraining(curVol)
       setPrevTraining(prevVol)
+      setLoading(false)
+    }).catch((err) => {
+      if (cancelled) return
+      console.error(err)
+      Alert.alert('Failed to load weekly overview', errorMessage(err))
       setLoading(false)
     })
     return () => {

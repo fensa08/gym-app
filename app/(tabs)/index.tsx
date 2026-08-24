@@ -41,6 +41,7 @@ export default function HomeScreen() {
   const [weightSpark, setWeightSpark] = useState<BodyWeightLog[]>([])
   const [daysSinceMeasurement, setDaysSinceMeasurement] = useState<number | null>(null)
   const [topInsight, setTopInsight] = useState<{ headline: string; color: SignalColor } | null>(null)
+  const [loadErrors, setLoadErrors] = useState<string[]>([])
 
   useFocusEffect(
     useCallback(() => {
@@ -49,17 +50,21 @@ export default function HomeScreen() {
   )
 
   async function loadData() {
+    const errors: string[] = []
+
     try {
       const ws = await getRecentWorkouts(30)
       setRecentWorkouts(ws)
     } catch (e) {
       console.error('Failed to load recent workouts', e)
+      errors.push('recent workouts')
     }
 
     try {
       setStreak(await getWorkoutStreak())
     } catch (e) {
       console.error('Failed to load workout streak', e)
+      errors.push('streak')
     }
 
     const [rec, nut, g, latestW, spark, daysSince, insight] = await Promise.allSettled([
@@ -72,19 +77,19 @@ export default function HomeScreen() {
       getTopInsight(),
     ])
     if (rec.status === 'fulfilled') setRecovery(rec.value)
-    else console.error('Failed to load latest recovery log', rec.reason)
+    else { console.error('Failed to load latest recovery log', rec.reason); errors.push('recovery') }
     if (nut.status === 'fulfilled') setNutrition(nut.value)
-    else console.error('Failed to load today nutrition log', nut.reason)
+    else { console.error('Failed to load today nutrition log', nut.reason); errors.push('nutrition') }
     if (g.status === 'fulfilled') setGoals(g.value)
-    else console.error('Failed to load user goals', g.reason)
+    else { console.error('Failed to load user goals', g.reason); errors.push('goals') }
     if (latestW.status === 'fulfilled') setLatestWeight(latestW.value)
-    else console.error('Failed to load latest body weight', latestW.reason)
+    else { console.error('Failed to load latest body weight', latestW.reason); errors.push('body weight') }
     if (spark.status === 'fulfilled') setWeightSpark(spark.value)
-    else console.error('Failed to load body weight spark', spark.reason)
+    else { console.error('Failed to load body weight spark', spark.reason); errors.push('weight trend') }
     if (daysSince.status === 'fulfilled') setDaysSinceMeasurement(daysSince.value)
-    else console.error('Failed to load days since last measurement', daysSince.reason)
+    else { console.error('Failed to load days since last measurement', daysSince.reason); errors.push('last measurement') }
     if (insight.status === 'fulfilled') setTopInsight(insight.value)
-    else console.error('Failed to load top insight', insight.reason)
+    else { console.error('Failed to load top insight', insight.reason); errors.push('insights') }
 
     try {
       const prs = await getAllPRs()
@@ -97,6 +102,7 @@ export default function HomeScreen() {
       )
     } catch (e) {
       console.error('Failed to load PRs', e)
+      errors.push('PRs')
     }
 
     try {
@@ -123,7 +129,10 @@ export default function HomeScreen() {
       )
     } catch (e) {
       console.error('Failed to load weekly volume', e)
+      errors.push('weekly volume')
     }
+
+    setLoadErrors(errors)
   }
 
   const suggestedIndex = recentWorkouts.length % TEMPLATES.length
@@ -137,6 +146,14 @@ export default function HomeScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
+        {loadErrors.length > 0 && (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorBannerText}>
+              Couldn't load: {loadErrors.join(', ')}. Pull to refresh or try again later.
+            </Text>
+          </View>
+        )}
+
         {/* Active workout resume banner */}
         {isActive && (
           <TouchableOpacity
@@ -392,6 +409,15 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   scroll: { flex: 1 },
   content: { padding: sp.md, paddingTop: sp.sm, paddingBottom: 120 },
+  errorBanner: {
+    backgroundColor: 'rgba(224,87,92,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(224,87,92,0.25)',
+    borderRadius: r.md,
+    padding: sp.sm,
+    marginBottom: sp.md,
+  },
+  errorBannerText: { color: colors.error, fontFamily: fonts.sans, fontSize: fs.xs },
   activeBanner: {
     flexDirection: 'row',
     alignItems: 'center',

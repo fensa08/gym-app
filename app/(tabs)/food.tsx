@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput } from 'react-native'
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native'
 import { useRouter, useFocusEffect } from 'expo-router'
 import { useState, useCallback } from 'react'
 import { Ionicons } from '@expo/vector-icons'
@@ -19,6 +19,7 @@ import {
   updateMealItemGrams,
 } from '../../lib/firestore/queriesHealth'
 import type { NutritionLog, UserGoals } from '../../lib/types'
+import { errorMessage } from '../../lib/errors'
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const MEAL_ORDER = ['Breakfast', 'Lunch', 'Snack', 'Dinner']
@@ -53,20 +54,25 @@ export default function NutritionScreen() {
   )
 
   async function loadData(date: string) {
-    const [g, l, week, avgs, cal, w] = await Promise.all([
-      getUserGoals(),
-      getNutritionLog(date),
-      getNutritionLogs(7),
-      getNutritionAverages(7),
-      getMaintenanceCalibration(),
-      getLatestBodyWeight(),
-    ])
-    setGoals(g)
-    setLog(l)
-    setWeekLogs(week)
-    setAverages(avgs)
-    setCalibration(cal)
-    setLatestWeightKg(w?.weight_kg ?? null)
+    try {
+      const [g, l, week, avgs, cal, w] = await Promise.all([
+        getUserGoals(),
+        getNutritionLog(date),
+        getNutritionLogs(7),
+        getNutritionAverages(7),
+        getMaintenanceCalibration(),
+        getLatestBodyWeight(),
+      ])
+      setGoals(g)
+      setLog(l)
+      setWeekLogs(week)
+      setAverages(avgs)
+      setCalibration(cal)
+      setLatestWeightKg(w?.weight_kg ?? null)
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to load nutrition data', errorMessage(err))
+    }
   }
 
   // ── Item editing ────────────────────────────────────────────────
@@ -83,21 +89,36 @@ export default function NutritionScreen() {
   async function applyGrams(next: number) {
     if (!editing || next <= 0) return
     setEditGrams(String(next))
-    await updateMealItemGrams(selectedDate, editing.mealId, editing.itemId, next)
-    loadData(selectedDate)
+    try {
+      await updateMealItemGrams(selectedDate, editing.mealId, editing.itemId, next)
+      loadData(selectedDate)
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to update item', errorMessage(err))
+    }
   }
 
   async function deleteItem() {
     if (!editing) return
-    await removeMealItem(selectedDate, editing.mealId, editing.itemId)
-    setEditing(null)
-    loadData(selectedDate)
+    try {
+      await removeMealItem(selectedDate, editing.mealId, editing.itemId)
+      setEditing(null)
+      loadData(selectedDate)
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to delete item', errorMessage(err))
+    }
   }
 
   async function addWater(ml: number) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-    await upsertNutritionLog({ water_ml: (log?.water_ml ?? 0) + ml }, selectedDate)
-    loadData(selectedDate)
+    try {
+      await upsertNutritionLog({ water_ml: (log?.water_ml ?? 0) + ml }, selectedDate)
+      loadData(selectedDate)
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to log water', errorMessage(err))
+    }
   }
 
   // ── Derived ─────────────────────────────────────────────────────

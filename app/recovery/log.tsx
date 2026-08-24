@@ -1,9 +1,10 @@
-import { View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView } from 'react-native'
+import { View, Text, TouchableOpacity, StyleSheet, TextInput, ScrollView, Alert } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useState, useEffect } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { upsertRecoveryLog, getRecoveryLog } from '../../lib/firestore/queriesHealth'
+import { errorMessage } from '../../lib/errors'
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -30,15 +31,21 @@ export default function LogRecoveryModal() {
   const [hrv, setHrv] = useState('')
   const [soreness, setSoreness] = useState<Record<MuscleGroupKey, SorenessLevel>>(EMPTY_SORENESS)
   const [syncedFields, setSyncedFields] = useState<{ sleep_hours?: boolean; hrv?: boolean; resting_hr?: boolean }>({})
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    getRecoveryLog(today()).then((log) => {
-      if (!log) return
-      if (log.sleep_hours != null) setSleepHours(log.sleep_hours)
-      if (log.resting_hr != null) setRestingHr(String(log.resting_hr))
-      if (log.hrv != null) setHrv(String(log.hrv))
-      setSyncedFields(log.hk_synced ?? {})
-    })
+    getRecoveryLog(today())
+      .then((log) => {
+        if (!log) return
+        if (log.sleep_hours != null) setSleepHours(log.sleep_hours)
+        if (log.resting_hr != null) setRestingHr(String(log.resting_hr))
+        if (log.hrv != null) setHrv(String(log.hrv))
+        setSyncedFields(log.hk_synced ?? {})
+      })
+      .catch((err) => {
+        console.error(err)
+        Alert.alert('Failed to load check-in', errorMessage(err))
+      })
   }, [])
 
   function bumpSleep(delta: number) {
@@ -50,19 +57,27 @@ export default function LogRecoveryModal() {
   }
 
   async function handleSave() {
-    await upsertRecoveryLog({
-      sleep_hours: sleepHours,
-      sleep_quality: sleepQuality,
-      stress_level: stressLevel,
-      resting_hr: restingHr ? parseInt(restingHr, 10) : null,
-      hrv: hrv ? parseInt(hrv, 10) : null,
-      soreness_chest: soreness.chest,
-      soreness_back: soreness.back,
-      soreness_legs: soreness.legs,
-      soreness_shoulders: soreness.shoulders,
-      soreness_arms: soreness.arms,
-    })
-    router.back()
+    setSaving(true)
+    try {
+      await upsertRecoveryLog({
+        sleep_hours: sleepHours,
+        sleep_quality: sleepQuality,
+        stress_level: stressLevel,
+        resting_hr: restingHr ? parseInt(restingHr, 10) : null,
+        hrv: hrv ? parseInt(hrv, 10) : null,
+        soreness_chest: soreness.chest,
+        soreness_back: soreness.back,
+        soreness_legs: soreness.legs,
+        soreness_shoulders: soreness.shoulders,
+        soreness_arms: soreness.arms,
+      })
+      router.back()
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to save check-in', errorMessage(err))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -126,8 +141,8 @@ export default function LogRecoveryModal() {
           <SorenessGrid value={soreness} onChange={updateSoreness} />
         </ScrollView>
 
-        <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.88}>
-          <Text style={styles.saveBtnText}>Save</Text>
+        <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.88} disabled={saving}>
+          <Text style={styles.saveBtnText}>{saving ? 'Saving...' : 'Save'}</Text>
         </TouchableOpacity>
       </View>
     </View>
