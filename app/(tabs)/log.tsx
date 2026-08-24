@@ -12,10 +12,11 @@ import { useState, useCallback, useRef } from 'react'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
-import { format } from 'date-fns'
+import { format, formatDistanceToNowStrict } from 'date-fns'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { getWorkoutHistoryWithStats, deleteWorkout } from '../../lib/firestore/queries'
 import { errorMessage } from '../../lib/errors'
+import { useWorkoutStore } from '../../lib/store/workout'
 
 type Session = Awaited<ReturnType<typeof getWorkoutHistoryWithStats>>[number]
 
@@ -24,6 +25,7 @@ const REVEAL = 76
 export default function LogScreen() {
   const router = useRouter()
   const [sessions, setSessions] = useState<Session[]>([])
+  const activeWorkout = useWorkoutStore((s) => s)
 
   useFocusEffect(
     useCallback(() => {
@@ -51,6 +53,29 @@ export default function LogScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.eyebrow}>History</Text>
         <Text style={styles.title}>Training Log</Text>
+
+        {activeWorkout.isActive && (
+          <TouchableOpacity
+            style={styles.activeBanner}
+            onPress={() => router.push('/workout/active')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.activeIcon}>
+              <Ionicons name="barbell" size={20} color={colors.accentDark} />
+            </View>
+            <View style={styles.info}>
+              <Text style={styles.activeTitle}>Workout in progress</Text>
+              <Text style={styles.activeMeta}>
+                {activeWorkout.workoutName || 'Untitled workout'}
+                {activeWorkout.startedAt
+                  ? ` · started ${formatDistanceToNowStrict(activeWorkout.startedAt, { addSuffix: true })}`
+                  : ''}
+              </Text>
+            </View>
+            <Text style={styles.activeResume}>Resume</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.accentDark} />
+          </TouchableOpacity>
+        )}
 
         {sessions.length === 0 ? (
           <View style={styles.empty}>
@@ -196,6 +221,28 @@ const styles = StyleSheet.create({
     marginTop: sp.xs,
   },
   title: { color: colors.textPrimary, fontFamily: fonts.serif, fontSize: 30, marginBottom: sp.md },
+  activeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.surfaceGreen,
+    borderWidth: 1,
+    borderColor: colors.accentDark,
+    borderRadius: r.lg,
+    padding: sp.md,
+    marginBottom: sp.md,
+  },
+  activeIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: r.md,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activeTitle: { color: colors.accentDark, fontFamily: fonts.sansSemiBold, fontSize: fs.md },
+  activeMeta: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.sm, marginTop: 2 },
+  activeResume: { color: colors.accentDark, fontFamily: fonts.sansSemiBold, fontSize: fs.sm },
   list: { gap: 12 },
   card: {
     flexDirection: 'row',
