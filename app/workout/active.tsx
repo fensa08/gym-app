@@ -9,7 +9,7 @@ import {
   Alert,
 } from 'react-native'
 import { useRouter } from 'expo-router'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import * as Haptics from 'expo-haptics'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -352,6 +352,29 @@ function LoggingView({
   onToggleSuperset(): void
   onDeleteSet(setIndex: number): void
 }) {
+  const tapRef = useRef<{ index: number | null; count: number; timer: ReturnType<typeof setTimeout> | null }>({
+    index: null,
+    count: 0,
+    timer: null,
+  })
+
+  function handleChipTap(i: number) {
+    const tap = tapRef.current
+    if (tap.timer) clearTimeout(tap.timer)
+    tap.count = tap.index === i ? tap.count + 1 : 1
+    tap.index = i
+    if (tap.count >= 3) {
+      tap.count = 0
+      tap.index = null
+      onDeleteSet(i)
+      return
+    }
+    tap.timer = setTimeout(() => {
+      tap.count = 0
+      tap.index = null
+    }, 400)
+  }
+
   return (
     <View style={styles.screen}>
       <View style={styles.topRow}>
@@ -398,7 +421,10 @@ function LoggingView({
               <TouchableOpacity
                 key={i}
                 style={[styles.setChip, set.superset != null && styles.setChipSuperset]}
-                onPress={() => onDeleteSet(i)}
+                onPress={() => handleChipTap(i)}
+                onLongPress={() => onDeleteSet(i)}
+                delayLongPress={2000}
+                activeOpacity={0.6}
               >
                 <Text style={styles.setChipText}>
                   Set {i + 1}: {set.reps}×{set.kg}kg
