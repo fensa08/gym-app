@@ -1,11 +1,19 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Alert } from 'react-native'
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Alert, TextInput } from 'react-native'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import { useEffect, useState } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { format, formatDuration, intervalToDuration } from 'date-fns'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
-import { getWorkoutDetail, deleteWorkout, type WorkoutDetail } from '../../lib/firestore/queries'
+import {
+  getWorkoutDetail,
+  deleteWorkout,
+  updateSet,
+  deleteSet,
+  saveSet,
+  type WorkoutDetail,
+  type WorkoutDetailSet,
+} from '../../lib/firestore/queries'
 import { errorMessage } from '../../lib/errors'
 
 export default function WorkoutDetailScreen() {
@@ -16,6 +24,7 @@ export default function WorkoutDetailScreen() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [editMode, setEditMode] = useState(false)
 
   useEffect(() => {
     if (id) {
@@ -72,6 +81,91 @@ export default function WorkoutDetailScreen() {
     }
   }
 
+  function patchSet(workoutExerciseId: string, setId: string, patch: Partial<WorkoutDetailSet>) {
+    setWorkout((w) => {
+      if (!w) return w
+      return {
+        ...w,
+        exercises: w.exercises.map((ex) =>
+          ex.workoutExerciseId !== workoutExerciseId
+            ? ex
+            : { ...ex, sets: ex.sets.map((s) => (s.id === setId ? { ...s, ...patch } : s)) }
+        ),
+      }
+    })
+  }
+
+  async function handleUpdateSet(
+    workoutExerciseId: string,
+    setId: string,
+    field: 'weight_kg' | 'reps',
+    value: number | null
+  ) {
+    patchSet(workoutExerciseId, setId, { [field]: value })
+    try {
+      await updateSet(id!, workoutExerciseId, setId, {
+        [field === 'weight_kg' ? 'weightKg' : 'reps']: value,
+      })
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to update set', errorMessage(err))
+    }
+  }
+
+  async function handleDeleteSet(workoutExerciseId: string, setId: string) {
+    setWorkout((w) => {
+      if (!w) return w
+      return {
+        ...w,
+        exercises: w.exercises.map((ex) =>
+          ex.workoutExerciseId !== workoutExerciseId
+            ? ex
+            : { ...ex, sets: ex.sets.filter((s) => s.id !== setId) }
+        ),
+      }
+    })
+    try {
+      await deleteSet(id!, workoutExerciseId, setId)
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to delete set', errorMessage(err))
+    }
+  }
+
+  async function handleAddSet(workoutExerciseId: string, nextSetNumber: number) {
+    try {
+      const setId = await saveSet(id!, workoutExerciseId, nextSetNumber, null, null, false)
+      setWorkout((w) => {
+        if (!w) return w
+        return {
+          ...w,
+          exercises: w.exercises.map((ex) =>
+            ex.workoutExerciseId !== workoutExerciseId
+              ? ex
+              : {
+                  ...ex,
+                  sets: [
+                    ...ex.sets,
+                    {
+                      id: setId,
+                      set_number: nextSetNumber,
+                      weight_kg: null,
+                      reps: null,
+                      is_pr: false,
+                      completed: true,
+                      superset: null,
+                    },
+                  ],
+                }
+          ),
+        }
+      })
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Failed to add set', errorMessage(err))
+    }
+  }
+
   return (
     <View style={[styles.root, { paddingTop: topInset, paddingBottom: bottomInset }]}>
       {/* Header */}
@@ -84,13 +178,26 @@ export default function WorkoutDetailScreen() {
           <Ionicons name="arrow-back" size={18} color={colors.textMuted} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{workout.name}</Text>
-        <TouchableOpacity
-          style={styles.deleteIconBtn}
-          onPress={() => setShowDeleteModal(true)}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Ionicons name="trash-outline" size={18} color={colors.error} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.editIconBtn}
+            onPress={() => setEditMode((v) => !v)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons
+              name={editMode ? 'checkmark' : 'pencil-outline'}
+              size={18}
+              color={colors.accentDark}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.deleteIconBtn}
+            onPress={() => setShowDeleteModal(true)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="trash-outline" size={18} color={colors.error} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
@@ -138,6 +245,7 @@ export default function WorkoutDetailScreen() {
                   <Text style={[styles.setColMid, styles.setHeaderText]}>REPS</Text>
                   <Text style={[styles.setColMid, styles.setHeaderText]}>WEIGHT</Text>
                   <Text style={[styles.setColRight, styles.setHeaderText]}>VOL</Text>
+                  {editMode && <View style={styles.setColDelete} />}
                 </View>
                 {ex.sets.map((s, si) => {
                   const setVol = s.weight_kg != null && s.reps != null
@@ -145,7 +253,7 @@ export default function WorkoutDetailScreen() {
                     : null
                   return (
                     <View
-                      key={si}
+                      key={s.id ?? si}
                       style={[styles.setRow, si < ex.sets.length - 1 && styles.setRowBorder]}
                     >
                       <View style={[styles.setCol, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
@@ -154,19 +262,56 @@ export default function WorkoutDetailScreen() {
                           <Ionicons name="trophy" size={11} color={colors.accentMid} />
                         )}
                       </View>
-                      <Text style={[styles.setColMid, styles.setCell]}>
-                        {s.reps != null ? s.reps : '—'}
-                      </Text>
-                      <Text style={[styles.setColMid, styles.setCell]}>
-                        {s.weight_kg != null ? `${s.weight_kg} kg` : '—'}
-                      </Text>
+                      {editMode ? (
+                        <EditableCell
+                          style={styles.setColMid}
+                          value={s.reps}
+                          suffix=""
+                          onCommit={(v) => handleUpdateSet(ex.workoutExerciseId, s.id, 'reps', v)}
+                        />
+                      ) : (
+                        <Text style={[styles.setColMid, styles.setCell]}>
+                          {s.reps != null ? s.reps : '—'}
+                        </Text>
+                      )}
+                      {editMode ? (
+                        <EditableCell
+                          style={styles.setColMid}
+                          value={s.weight_kg}
+                          suffix=" kg"
+                          onCommit={(v) => handleUpdateSet(ex.workoutExerciseId, s.id, 'weight_kg', v)}
+                        />
+                      ) : (
+                        <Text style={[styles.setColMid, styles.setCell]}>
+                          {s.weight_kg != null ? `${s.weight_kg} kg` : '—'}
+                        </Text>
+                      )}
                       <Text style={[styles.setColRight, styles.setCellMono]}>
                         {setVol != null ? `${Math.round(setVol)}` : '—'}
                       </Text>
+                      {editMode && (
+                        <TouchableOpacity
+                          style={styles.setColDelete}
+                          onPress={() => handleDeleteSet(ex.workoutExerciseId, s.id)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Ionicons name="close-circle" size={16} color={colors.error} />
+                        </TouchableOpacity>
+                      )}
                     </View>
                   )
                 })}
               </View>
+              {editMode && (
+                <TouchableOpacity
+                  style={styles.addSetBtn}
+                  onPress={() => handleAddSet(ex.workoutExerciseId, ex.sets.length + 1)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="add" size={16} color={colors.accentDark} />
+                  <Text style={styles.addSetText}>Add Set</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )
         })}
@@ -199,6 +344,63 @@ export default function WorkoutDetailScreen() {
         </View>
       </Modal>
     </View>
+  )
+}
+
+function EditableCell({
+  value,
+  suffix,
+  style,
+  onCommit,
+}: {
+  value: number | null
+  suffix: string
+  style?: object
+  onCommit(v: number | null): void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+
+  function startEdit() {
+    setDraft(value != null ? String(value) : '')
+    setEditing(true)
+  }
+
+  function commit() {
+    setEditing(false)
+    const trimmed = draft.trim()
+    if (trimmed === '') {
+      onCommit(null)
+      return
+    }
+    const parsed = parseFloat(trimmed.replace(',', '.'))
+    if (!isNaN(parsed) && parsed >= 0) {
+      onCommit(parsed)
+    }
+  }
+
+  if (editing) {
+    return (
+      <TextInput
+        style={[style, styles.setCellInput]}
+        value={draft}
+        onChangeText={setDraft}
+        keyboardType="decimal-pad"
+        autoFocus
+        selectTextOnFocus
+        returnKeyType="done"
+        onSubmitEditing={commit}
+        onBlur={commit}
+      />
+    )
+  }
+
+  return (
+    <TouchableOpacity style={style} onPress={startEdit} activeOpacity={0.6}>
+      <Text style={styles.setCellEditable}>
+        {value != null ? `${value}${suffix}` : '—'}
+      </Text>
+    </TouchableOpacity>
   )
 }
 
@@ -361,6 +563,15 @@ const styles = StyleSheet.create({
     fontFamily: fonts.mono,
     fontSize: fs.sm,
   },
+  headerActions: { flexDirection: 'row', gap: 8 },
+  editIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceGreen,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   deleteIconBtn: {
     width: 36,
     height: 36,
@@ -368,6 +579,38 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(224,87,92,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  setColDelete: { width: 24, alignItems: 'center' },
+  setCellEditable: {
+    color: colors.accentDark,
+    fontFamily: fonts.sansSemiBold,
+    fontSize: fs.sm,
+    textDecorationLine: 'underline',
+    textDecorationStyle: 'dotted',
+  },
+  setCellInput: {
+    color: colors.textPrimary,
+    fontFamily: fonts.sans,
+    fontSize: fs.sm,
+    borderWidth: 1,
+    borderColor: colors.accentMid,
+    borderRadius: r.sm,
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+  },
+  addSetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  addSetText: {
+    color: colors.accentDark,
+    fontFamily: fonts.sansSemiBold,
+    fontSize: fs.xs,
   },
   modalOverlay: {
     flex: 1,

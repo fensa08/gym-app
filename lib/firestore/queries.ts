@@ -131,6 +131,32 @@ export async function saveSet(
   return setId
 }
 
+export async function updateSet(
+  workoutId: string,
+  workoutExerciseId: string,
+  setId: string,
+  updates: { weightKg?: number | null; reps?: number | null }
+): Promise<void> {
+  const docRef = ref('workouts', workoutId)
+  const snap = await getDoc(docRef)
+  if (!snap.exists()) return
+  const exercises = (snap.data().exercises || []).map((ex: any) => {
+    if (ex.workoutExerciseId !== workoutExerciseId) return ex
+    return {
+      ...ex,
+      sets: (ex.sets || []).map((s: any) => {
+        if (s.id !== setId) return s
+        return {
+          ...s,
+          ...(updates.weightKg !== undefined ? { weight_kg: updates.weightKg } : {}),
+          ...(updates.reps !== undefined ? { reps: updates.reps } : {}),
+        }
+      }),
+    }
+  })
+  await updateDoc(docRef, { exercises })
+}
+
 export async function deleteSet(
   workoutId: string,
   workoutExerciseId: string,
@@ -302,6 +328,7 @@ export async function getAllPRs(): Promise<
 }
 
 export interface WorkoutDetailSet {
+  id: string
   set_number: number
   weight_kg: number | null
   reps: number | null
@@ -338,6 +365,7 @@ export async function getWorkoutDetail(workoutId: string): Promise<WorkoutDetail
     sets: (ex.sets || [])
       .filter((s: any) => s.completed)
       .map((s: any) => ({
+        id: s.id,
         set_number: s.set_number,
         weight_kg: s.weight_kg,
         reps: s.reps,
