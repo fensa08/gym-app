@@ -23,6 +23,7 @@ import {
   getPreviousSets,
   getRecentWorkouts,
   getUserPrograms,
+  getAllExercises,
   type UserProgram,
 } from '../../lib/firestore/queries'
 import { useWorkoutStore } from '../../lib/store/workout'
@@ -70,6 +71,7 @@ export default function StartWorkoutScreen() {
   const [customInput, setCustomInput] = useState('')
   const [customExercises, setCustomExercises] = useState<string[]>([])
   const [search, setSearch] = useState('')
+  const [savedExerciseNames, setSavedExerciseNames] = useState<string[]>([])
 
   const topInset = Math.max(insets.top, 54)
   const bottomInset = Math.max(insets.bottom, sp.md)
@@ -77,6 +79,13 @@ export default function StartWorkoutScreen() {
   useEffect(() => {
     loadPrograms()
   }, [])
+
+  useEffect(() => {
+    if (view !== 'custom') return
+    getAllExercises()
+      .then((exs) => setSavedExerciseNames(exs.map((e) => e.name)))
+      .catch((err) => console.error('Failed to load saved exercises:', err))
+  }, [view])
 
   async function loadPrograms() {
     setDataLoading(true)
@@ -242,7 +251,8 @@ export default function StartWorkoutScreen() {
     else startUserProgram(item.program)
   }
 
-  const filteredPool = POOL.filter((n) => n.toLowerCase().includes(search.toLowerCase()))
+  const combinedPool = Array.from(new Set([...POOL, ...savedExerciseNames]))
+  const filteredPool = combinedPool.filter((n) => n.toLowerCase().includes(search.toLowerCase()))
   const totalCustom = selected.size + customExercises.length
 
   if (loading) {
