@@ -20,6 +20,7 @@ import {
 } from '../../lib/firestore/queriesHealth'
 import type { NutritionLog, UserGoals } from '../../lib/types'
 import { errorMessage } from '../../lib/errors'
+import { useAuthStore } from '../../lib/store/auth'
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const MEAL_ORDER = ['Breakfast', 'Lunch', 'Snack', 'Dinner']
@@ -30,6 +31,7 @@ function iso(d: Date): string {
 
 export default function NutritionScreen() {
   const router = useRouter()
+  const authReady = useAuthStore((s) => s.authReady)
 
   const [selectedDate, setSelectedDate] = useState(iso(new Date()))
   const [log, setLog] = useState<NutritionLog | null>(null)
@@ -49,8 +51,9 @@ export default function NutritionScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      if (!authReady) return
       loadData(selectedDate)
-    }, [selectedDate])
+    }, [authReady, selectedDate])
   )
 
   async function loadData(date: string) {

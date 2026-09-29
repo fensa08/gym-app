@@ -18,6 +18,7 @@ import {
   readinessScore,
 } from '../../lib/firestore/queriesHealth'
 import { getTopInsight, SIGNAL_COLORS, type SignalColor } from '../../lib/insights'
+import { useAuthStore } from '../../lib/store/auth'
 import { useWorkoutStore } from '../../lib/store/workout'
 import { TEMPLATES } from '../../lib/templates'
 import type { Workout, BodyWeightLog, RecoveryLog, NutritionLog, UserGoals } from '../../lib/types'
@@ -27,6 +28,7 @@ const WEEK_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 export default function HomeScreen() {
   const router = useRouter()
   const { isActive } = useWorkoutStore()
+  const authReady = useAuthStore((s) => s.authReady)
   const [recentWorkouts, setRecentWorkouts] = useState<Workout[]>([])
   const [streak, setStreak] = useState(0)
   const [prsThisMonth, setPrsThisMonth] = useState(0)
@@ -45,8 +47,12 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      // Wait for Firebase's own session restore to finish - auth.currentUser
+      // (which every Firestore query keys off) can still be null even when
+      // the zustand user is already set from the AsyncStorage cache.
+      if (!authReady) return
       loadData()
-    }, [])
+    }, [authReady])
   )
 
   async function loadData() {

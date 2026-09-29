@@ -17,6 +17,7 @@ import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { getWorkoutHistoryWithStats, deleteWorkout } from '../../lib/firestore/queries'
 import { errorMessage } from '../../lib/errors'
 import { useWorkoutStore } from '../../lib/store/workout'
+import { useAuthStore } from '../../lib/store/auth'
 
 type Session = Awaited<ReturnType<typeof getWorkoutHistoryWithStats>>[number]
 
@@ -26,14 +27,16 @@ export default function LogScreen() {
   const router = useRouter()
   const [sessions, setSessions] = useState<Session[]>([])
   const activeWorkout = useWorkoutStore((s) => s)
+  const authReady = useAuthStore((s) => s.authReady)
 
   useFocusEffect(
     useCallback(() => {
+      if (!authReady) return
       getWorkoutHistoryWithStats(40).then(setSessions).catch((err) => {
         console.error(err)
         Alert.alert('Failed to load training log', errorMessage(err))
       })
-    }, [])
+    }, [authReady])
   )
 
   async function handleDelete(id: string) {

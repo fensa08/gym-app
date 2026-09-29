@@ -48,6 +48,7 @@ import { LineChart, BarChart, DivergingBarChart, BarWithLineChart, niceTicks, in
 import { StatChip } from '../../components/Cards'
 import type { BodyWeightLog, BodyCompositionLog, RecoveryLog, NutritionLog } from '../../lib/types'
 import { errorMessage } from '../../lib/errors'
+import { useAuthStore } from '../../lib/store/auth'
 
 const WEEK_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 const BAR_HEIGHT = 100
@@ -95,6 +96,7 @@ const TABS: { key: StatsTab; label: string }[] = [
 
 export default function StatsScreen() {
   const router = useRouter()
+  const authReady = useAuthStore((s) => s.authReady)
   const [tab, setTab] = useState<StatsTab>('overview')
 
   // Training tab state (unchanged)
@@ -132,8 +134,9 @@ export default function StatsScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      if (!authReady) return
       loadData()
-    }, [])
+    }, [authReady])
   )
 
   useEffect(() => {

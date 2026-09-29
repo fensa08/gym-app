@@ -18,6 +18,11 @@ interface AuthStore {
   user: User | null
   loading: boolean
   error: string | null
+  // True once Firebase Auth's own session restore has completed, i.e.
+  // auth.currentUser is authoritative. `user` can be truthy (from the
+  // AsyncStorage cache) before this flips true - Firestore reads that key
+  // off auth.currentUser must wait for authReady, not just `user`.
+  authReady: boolean
   init(): void
   signIn(): Promise<void>
   signOut(): Promise<void>
@@ -27,6 +32,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
   loading: true,
   error: null,
+  authReady: false,
 
   async init() {
     // Unblock the router immediately with the last-known user so a cold
@@ -56,6 +62,13 @@ export const useAuthStore = create<AuthStore>((set) => ({
         set({ loading: false, error: err.message })
       }
     )
+
+    // Resolves once the SDK's initial auth state is known, i.e. once
+    // auth.currentUser is authoritative (the above listener will already
+    // have fired with the real user by then). Firestore reads keyed off
+    // auth.currentUser must wait for this, not just the cached `user`.
+    await auth.authStateReady()
+    set({ authReady: true })
   },
 
   async signIn() {

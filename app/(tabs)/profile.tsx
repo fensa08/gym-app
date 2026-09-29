@@ -22,6 +22,7 @@ const SETTINGS: { label: string; value: string; badge?: boolean }[] = [
 export default function ProfileScreen() {
   const router = useRouter()
   const signOut = useAuthStore((s) => s.signOut)
+  const authReady = useAuthStore((s) => s.authReady)
   const [workoutCount, setWorkoutCount] = useState(0)
   const [prCount, setPrCount] = useState(0)
   const [streak, setStreak] = useState(0)
@@ -32,8 +33,9 @@ export default function ProfileScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      if (!authReady) return
       loadData()
-    }, [])
+    }, [authReady])
   )
 
   async function loadData() {

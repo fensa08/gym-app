@@ -15,6 +15,7 @@ import {
 } from '../../lib/healthkitSync'
 import type { RecoveryLog, MuscleGroupKey } from '../../lib/types'
 import { errorMessage } from '../../lib/errors'
+import { useAuthStore } from '../../lib/store/auth'
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const EMPTY_SORENESS: Record<MuscleGroupKey, 0 | 1 | 2 | 3> = {
@@ -27,6 +28,7 @@ const EMPTY_SORENESS: Record<MuscleGroupKey, 0 | 1 | 2 | 3> = {
 
 export default function RecoveryHubScreen() {
   const router = useRouter()
+  const authReady = useAuthStore((s) => s.authReady)
   const [latest, setLatest] = useState<RecoveryLog | null>(null)
   const [weekLogs, setWeekLogs] = useState<RecoveryLog[]>([])
   const [hkConnected, setHkConnected] = useState(false)
@@ -35,8 +37,9 @@ export default function RecoveryHubScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      if (!authReady) return
       syncHealthKitIfNeeded().finally(loadData)
-    }, [])
+    }, [authReady])
   )
 
   async function loadData() {

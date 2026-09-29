@@ -7,19 +7,22 @@ import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { getFoods, deleteFood } from '../../lib/firestore/queriesHealth'
 import type { Food } from '../../lib/types'
 import { errorMessage } from '../../lib/errors'
+import { useAuthStore } from '../../lib/store/auth'
 
 export default function FoodsLibraryScreen() {
   const router = useRouter()
+  const authReady = useAuthStore((s) => s.authReady)
   const [foods, setFoods] = useState<Food[]>([])
   const [search, setSearch] = useState('')
 
   useFocusEffect(
     useCallback(() => {
+      if (!authReady) return
       getFoods().then(setFoods).catch((err) => {
         console.error(err)
         Alert.alert('Failed to load foods', errorMessage(err))
       })
-    }, [])
+    }, [authReady])
   )
 
   async function handleDelete(id: string) {

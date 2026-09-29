@@ -14,6 +14,7 @@ import {
   getUserGoals,
 } from '../../lib/firestore/queriesHealth'
 import { computeFFMI } from '../../lib/insights'
+import { useAuthStore } from '../../lib/store/auth'
 import type { BodyWeightLog, BodyCompositionLog, UserGoals } from '../../lib/types'
 
 export const CIRCUMFERENCE_FIELDS: { key: keyof BodyCompositionLog; label: string }[] = [
@@ -27,6 +28,7 @@ export const CIRCUMFERENCE_FIELDS: { key: keyof BodyCompositionLog; label: strin
 
 export default function BodyHubScreen() {
   const router = useRouter()
+  const authReady = useAuthStore((s) => s.authReady)
   const [weights, setWeights] = useState<BodyWeightLog[]>([])
   const [comps, setComps] = useState<BodyCompositionLog[]>([])
   const [latestComp, setLatestComp] = useState<BodyCompositionLog | null>(null)
@@ -36,8 +38,9 @@ export default function BodyHubScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      if (!authReady) return
       loadData()
-    }, [])
+    }, [authReady])
   )
 
   async function loadData() {

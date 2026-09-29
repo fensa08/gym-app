@@ -15,9 +15,11 @@ import {
 } from '../../lib/insights'
 import { getStaleExercises, markStalenessResolved } from '../../lib/firestore/queriesHealth'
 import { errorMessage } from '../../lib/errors'
+import { useAuthStore } from '../../lib/store/auth'
 
 export default function InsightsScreen() {
   const router = useRouter()
+  const authReady = useAuthStore((s) => s.authReady)
   const [bodyComp, setBodyComp] = useState<Signal | null>(null)
   const [readiness, setReadiness] = useState<Signal | null>(null)
   const [bulkQuality, setBulkQuality] = useState<Signal | null>(null)
@@ -28,8 +30,9 @@ export default function InsightsScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      if (!authReady) return
       loadData()
-    }, [])
+    }, [authReady])
   )
 
   async function loadData() {

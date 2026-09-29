@@ -11,14 +11,17 @@ import { TEMPLATES } from '../../lib/templates'
 import type { WorkoutTemplate } from '../../lib/templates'
 import type { Workout } from '../../lib/types'
 import { errorMessage } from '../../lib/errors'
+import { useAuthStore } from '../../lib/store/auth'
 
 export default function WorkoutsScreen() {
   const router = useRouter()
+  const authReady = useAuthStore((s) => s.authReady)
   const [recentWorkouts, setRecentWorkouts] = useState<Workout[]>([])
   const [customPrograms, setCustomPrograms] = useState<UserProgram[]>([])
 
   useFocusEffect(
     useCallback(() => {
+      if (!authReady) return
       getRecentWorkouts(30).then(setRecentWorkouts).catch((err) => {
         console.error(err)
         Alert.alert('Failed to load workouts', errorMessage(err))
@@ -27,7 +30,7 @@ export default function WorkoutsScreen() {
         console.error(err)
         Alert.alert('Failed to load programs', errorMessage(err))
       })
-    }, [])
+    }, [authReady])
   )
 
   function lastDoneFor(name: string) {
