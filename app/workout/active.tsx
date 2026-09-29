@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons'
 import Svg, { Circle } from 'react-native-svg'
 import { colors, sp, r, fs, fonts } from '../../lib/theme'
 import { useWorkoutStore, type RestLogEntry } from '../../lib/store/workout'
+import type { Exercise } from '../../lib/types'
 import {
   saveSet,
   deleteSet,
@@ -25,6 +26,7 @@ import {
   getOrCreateExercise,
   addWorkoutExercise,
   getPreviousSets,
+  searchExercises,
 } from '../../lib/firestore/queries'
 import { setWorkoutRpe as dbSetWorkoutRpe, setExerciseRpe as dbSetExerciseRpe } from '../../lib/firestore/queries'
 import { RPESelector } from '../../components/Selectors'
@@ -72,6 +74,8 @@ export default function ActiveWorkoutScreen() {
   const [repsInput, setRepsInput] = useState(currentExercise?.startReps ?? 8)
   const [kgInput, setKgInput] = useState(currentExercise?.startKg ?? 20)
   const [customExerciseName, setCustomExerciseName] = useState('')
+  const [searchResults, setSearchResults] = useState<Exercise[]>([])
+  const [searching, setSearching] = useState(false)
   const [prLabel, setPrLabel] = useState<string | null>(null)
   const [showDiscardModal, setShowDiscardModal] = useState(false)
 
@@ -82,6 +86,32 @@ export default function ActiveWorkoutScreen() {
       setKgInput(last?.kg ?? currentExercise.startKg)
     }
   }, [currentExerciseIndex])
+
+  useEffect(() => {
+    const text = customExerciseName.trim()
+    if (!text) {
+      setSearchResults([])
+      setSearching(false)
+      return
+    }
+    let cancelled = false
+    setSearching(true)
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchExercises(text)
+        if (!cancelled) setSearchResults(results)
+      } catch (err) {
+        console.error('Failed to search exercises:', err)
+        if (!cancelled) setSearchResults([])
+      } finally {
+        if (!cancelled) setSearching(false)
+      }
+    }, 250)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [customExerciseName])
 
   async function handleSaveSet() {
     if (!currentExercise) return
@@ -130,12 +160,9 @@ export default function ActiveWorkoutScreen() {
     ])
   }
 
-  async function handleAddCustomExercise() {
-    const name = customExerciseName.trim()
-    if (!name) return
-    let exercise, workoutExerciseId, prevSets
+  async function finishAddingExercise(exercise: Exercise) {
+    let workoutExerciseId, prevSets
     try {
-      exercise = await getOrCreateExercise(name)
       ;[workoutExerciseId, prevSets] = await Promise.all([
         workoutId
           ? addWorkoutExercise(workoutId!, exercise.id, exercises.length, exercise.name)
@@ -150,7 +177,7 @@ export default function ActiveWorkoutScreen() {
     addExercise({
       workoutExerciseId,
       exerciseId: exercise.id,
-      name,
+      name: exercise.name,
       muscleGroup: exercise.muscle_group,
       equipment: exercise.equipment,
       target: 'Custom exercise',
@@ -160,7 +187,26 @@ export default function ActiveWorkoutScreen() {
       previousSets: prevSets,
     })
     setCustomExerciseName('')
+    setSearchResults([])
     setCurrentExercise(exercises.length)
+  }
+
+  async function handleSelectExercise(exercise: Exercise) {
+    await finishAddingExercise(exercise)
+  }
+
+  async function handleCreateExercise() {
+    const name = customExerciseName.trim()
+    if (!name) return
+    let exercise
+    try {
+      exercise = await getOrCreateExercise(name)
+    } catch (err) {
+      console.error('Failed to create exercise:', err)
+      Alert.alert('Could not create exercise', errorMessage(err))
+      return
+    }
+    await finishAddingExercise(exercise)
   }
 
   function handleFinish() {
@@ -256,7 +302,10 @@ export default function ActiveWorkoutScreen() {
           currentIndex={currentExerciseIndex}
           customName={customExerciseName}
           onCustomNameChange={setCustomExerciseName}
-          onAddCustom={handleAddCustomExercise}
+          searchResults={searchResults}
+          searching={searching}
+          onSelectExercise={handleSelectExercise}
+          onCreateExercise={handleCreateExercise}
           onPick={(i) => setCurrentExercise(i)}
           onClose={() => setView('logging')}
         />
@@ -562,7 +611,10 @@ function PickerView({
   currentIndex,
   customName,
   onCustomNameChange,
-  onAddCustom,
+  searchResults,
+  searching,
+  onSelectExercise,
+  onCreateExercise,
   onPick,
   onClose,
 }: {
@@ -571,10 +623,16 @@ function PickerView({
   currentIndex: number
   customName: string
   onCustomNameChange(v: string): void
-  onAddCustom(): void
+  searchResults: Exercise[]
+  searching: boolean
+  onSelectExercise(exercise: Exercise): void
+  onCreateExercise(): void
   onPick(i: number): void
   onClose(): void
 }) {
+  const trimmedName = customName.trim()
+  const hasExactMatch = searchResults.some((r) => r.name.toLowerCase() === trimmedName.toLowerCase())
+
   return (
     <View style={styles.screen}>
       <View style={styles.topRow}>
@@ -585,20 +643,41 @@ function PickerView({
 
       <Text style={styles.pickerTitle}>{programName}</Text>
 
-      <View style={styles.customRow}>
-        <TextInput
-          style={styles.customInput}
-          value={customName}
-          onChangeText={onCustomNameChange}
-          placeholder="Add a custom exercise…"
-          placeholderTextColor={colors.textSecondary}
-          returnKeyType="done"
-          onSubmitEditing={onAddCustom}
-        />
-        <TouchableOpacity style={styles.addBtn} onPress={onAddCustom} activeOpacity={0.85}>
-          <Text style={styles.addBtnText}>Add</Text>
-        </TouchableOpacity>
-      </View>
+      <TextInput
+        style={styles.customInput}
+        value={customName}
+        onChangeText={onCustomNameChange}
+        placeholder="Search or add an exercise…"
+        placeholderTextColor={colors.textSecondary}
+        returnKeyType="done"
+        onSubmitEditing={onCreateExercise}
+      />
+
+      {trimmedName.length > 0 && (
+        <View style={styles.searchResultsWrap}>
+          {searchResults.map((result) => (
+            <TouchableOpacity
+              key={result.id}
+              style={styles.searchResultRow}
+              onPress={() => onSelectExercise(result)}
+              activeOpacity={0.85}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.searchResultName}>{result.name}</Text>
+                <Text style={styles.searchResultSub}>{result.muscle_group}</Text>
+              </View>
+              <Ionicons name="add-circle-outline" size={18} color={colors.accentDark} />
+            </TouchableOpacity>
+          ))}
+
+          {!searching && !hasExactMatch && (
+            <TouchableOpacity style={styles.createRow} onPress={onCreateExercise} activeOpacity={0.85}>
+              <Ionicons name="add" size={16} color={colors.accentDark} />
+              <Text style={styles.createRowText}>Create "{trimmedName}" exercise</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
         {exercises.map((ex, i) => {
@@ -1172,9 +1251,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginVertical: 14,
   },
-  customRow: { flexDirection: 'row', gap: 8, marginBottom: sp.md },
   customInput: {
-    flex: 1,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.borderMed,
@@ -1184,14 +1261,35 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontFamily: fonts.sans,
     fontSize: fs.sm,
+    marginBottom: sp.sm,
   },
-  addBtn: {
-    backgroundColor: colors.textPrimary,
+  searchResultsWrap: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: r.md,
-    paddingHorizontal: 18,
-    justifyContent: 'center',
+    marginBottom: sp.md,
+    overflow: 'hidden',
   },
-  addBtnText: { color: '#fff', fontFamily: fonts.sansSemiBold, fontSize: fs.sm },
+  searchResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: sp.md,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  searchResultName: { color: colors.textPrimary, fontFamily: fonts.sansSemiBold, fontSize: fs.sm },
+  searchResultSub: { color: colors.textSecondary, fontFamily: fonts.sans, fontSize: fs.xs, marginTop: 2 },
+  createRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: sp.md,
+    paddingVertical: 12,
+  },
+  createRowText: { color: colors.accentDark, fontFamily: fonts.sansSemiBold, fontSize: fs.sm },
   pickRow: {
     flexDirection: 'row',
     alignItems: 'center',
