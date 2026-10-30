@@ -39,15 +39,49 @@ export async function getAllExercises(): Promise<Exercise[]> {
   return list
 }
 
+const words = (s: string) => s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+
+function lev(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j)
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i]
+    for (let j = 1; j <= b.length; j++)
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1))
+    prev = cur
+  }
+  return prev[b.length]
+}
+
+// lower = better; null = no match. 0 prefix, 1 substring (name/muscle), 2 token prefixes, 3+ typo tolerance
+function score(e: Exercise, q: string, qTokens: string[]): number | null {
+  const name = e.name.toLowerCase()
+  if (name.startsWith(q)) return 0
+  if (name.includes(q) || e.muscle_group.toLowerCase().includes(q)) return 1
+  const nw = words(name)
+  if (qTokens.every(t => nw.some(w => w.startsWith(t)))) return 2
+  let total = 0
+  for (const t of qTokens) {
+    const k = t.length < 3 ? 0 : t.length < 6 ? 1 : 2 // shortcut: no typo tolerance for 1-2 chars, they only prefix-match
+    // compare against whole word and same-length word prefix so partial typos ("seted") match
+    const d = Math.min(...nw.map(w => Math.min(lev(t, w), lev(t, w.slice(0, t.length)))))
+    if (d > k) return null
+    total += d
+  }
+  return 3 + total / 10
+}
+
 export async function searchExercises(q: string): Promise<Exercise[]> {
   const lower = q.trim().toLowerCase()
   if (!lower) return []
+  const qTokens = words(lower)
+  if (qTokens.length === 0) return [] // query like "--"
   const all = await getAllExercises()
-  const hits = all.filter(e =>
-    e.name.toLowerCase().includes(lower) || e.muscle_group.toLowerCase().includes(lower)
-  )
-  const starts = (e: Exercise) => (e.name.toLowerCase().startsWith(lower) ? 0 : 1)
-  return hits.sort((a, b) => starts(a) - starts(b)).slice(0, 8)
+  return all
+    .map(e => ({ e, s: score(e, lower, qTokens) }))
+    .filter((x): x is { e: Exercise; s: number } => x.s !== null)
+    .sort((a, b) => a.s - b.s) // stable: ties keep library order
+    .slice(0, 8)
+    .map(x => x.e)
 }
 
 export async function getExercisesByName(names: string[]): Promise<Exercise[]> {
