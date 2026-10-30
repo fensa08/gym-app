@@ -4,6 +4,8 @@ import {
   createWorkout,
   getPreviousSets,
 } from './firestore/queries'
+import { colors } from './theme'
+import type { WorkoutDetail } from './firestore/queries'
 import type { WorkoutTemplate } from './templates'
 import type { ActiveExercise } from './types'
 
@@ -38,4 +40,14 @@ export async function buildWorkoutFromTemplate(
   }
 
   return { workoutId, exercises }
+}
+
+// Template from a past workout: same name + exercise names, same set count as the target.
+export function templateFromWorkout(w: Pick<WorkoutDetail, 'id' | 'name' | 'exercises'>): WorkoutTemplate {
+  return {
+    key: w.id, name: w.name, tag: 'Repeat', sub: `${w.exercises.length} exercises`,
+    duration: w.exercises.length * 8,
+    iconColor: colors.accentMid, iconBg: colors.surfaceMint, color: colors.accentMid,
+    exercises: w.exercises.map((e) => ({ name: e.exercise_name, sets: e.sets.length })),
+  }
 }

@@ -15,6 +15,8 @@ import {
   type WorkoutDetailSet,
 } from '../../lib/firestore/queries'
 import { errorMessage } from '../../lib/errors'
+import { useWorkoutStore } from '../../lib/store/workout'
+import { buildWorkoutFromTemplate, templateFromWorkout } from '../../lib/workoutHelpers'
 
 export default function WorkoutDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -25,6 +27,7 @@ export default function WorkoutDetailScreen() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [editMode, setEditMode] = useState(false)
+  const [repeating, setRepeating] = useState(false)
 
   useEffect(() => {
     if (id) {
@@ -78,6 +81,29 @@ export default function WorkoutDetailScreen() {
     } catch (err) {
       console.error(err)
       Alert.alert('Failed to delete workout', errorMessage(err))
+    }
+  }
+
+  async function handleRepeat() {
+    if (!workout || repeating) return
+    if (useWorkoutStore.getState().isActive) {
+      Alert.alert('Workout in progress', 'Finish or resume your current workout first.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Resume', onPress: () => router.replace('/workout/active') },
+      ])
+      return
+    }
+    setRepeating(true)
+    try {
+      const { workoutId, exercises } = await buildWorkoutFromTemplate(templateFromWorkout(workout))
+      if (exercises.length === 0) throw new Error('No exercises found to repeat.')
+      useWorkoutStore.getState().startWorkout(workoutId, workout.name, exercises)
+      router.replace('/workout/active')
+    } catch (err) {
+      console.error(err)
+      Alert.alert('Could not start workout', errorMessage(err))
+    } finally {
+      setRepeating(false)
     }
   }
 
@@ -216,6 +242,14 @@ export default function WorkoutDetailScreen() {
             <StatChip icon="speedometer-outline" value={String(workout.overall_rpe)} label="RPE" />
           )}
         </View>
+
+        {workout.exercises.length > 0 && (
+          <TouchableOpacity style={styles.repeatBtn} onPress={handleRepeat} disabled={repeating || editMode} activeOpacity={0.85}>
+            {repeating ? <ActivityIndicator color={colors.accentDark} /> : (<>
+              <Ionicons name="repeat" size={16} color={colors.accentDark} />
+              <Text style={styles.repeatText}>Repeat</Text></>)}
+          </TouchableOpacity>
+        )}
 
         {/* Exercises */}
         <Text style={styles.sectionLabel}>EXERCISES</Text>
@@ -484,6 +518,17 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: 10,
   },
+  repeatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.surfaceGreen,
+    borderRadius: r.lg,
+    paddingVertical: 12,
+    marginBottom: sp.lg,
+  },
+  repeatText: { color: colors.accentDark, fontFamily: fonts.sansSemiBold, fontSize: fs.sm },
   sectionLabel: {
     color: colors.textSecondary,
     fontFamily: fonts.sansSemiBold,
