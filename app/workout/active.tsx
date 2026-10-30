@@ -632,6 +632,7 @@ function PickerView({
 }) {
   const trimmedName = customName.trim()
   const hasExactMatch = searchResults.some((r) => r.name.toLowerCase() === trimmedName.toLowerCase())
+  const inWorkout = new Set(exercises.map((e) => e.name.toLowerCase()))
 
   return (
     <View style={styles.screen}>
@@ -655,7 +656,7 @@ function PickerView({
 
       {trimmedName.length > 0 && (
         <View style={styles.searchResultsWrap}>
-          {searchResults.map((result) => (
+          {searchResults.filter((r) => !inWorkout.has(r.name.toLowerCase())).map((result) => (
             <TouchableOpacity
               key={result.id}
               style={styles.searchResultRow}
@@ -679,7 +680,7 @@ function PickerView({
         </View>
       )}
 
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {exercises.map((ex, i) => {
           const isCurrent = i === currentIndex
           const count = ex.loggedSets.length

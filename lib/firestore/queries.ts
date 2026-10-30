@@ -23,17 +23,31 @@ function sanitizeDocId(name: string): string {
 }
 
 // ── Exercises ────────────────────────────────────────────────────
+// shortcut: cache goes stale if another device adds exercises; upgrade = TTL or onSnapshot.
+// Keyed by uid so a re-login never serves the previous user's exercises.
+let exerciseCache: { uid: string; list: Exercise[] } | null = null
+// Bumped on every write so a fetch that started before the write cannot re-cache the old list.
+let exerciseGen = 0
+
 export async function getAllExercises(): Promise<Exercise[]> {
+  const u = uid()
+  if (exerciseCache?.uid === u) return exerciseCache.list
+  const gen = exerciseGen
   const snap = await getDocs(query(col('exercises'), orderBy('muscle_group'), orderBy('name')))
-  return snap.docs.map(d => ({ id: d.id, ...d.data() } as Exercise))
+  const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Exercise))
+  if (gen === exerciseGen) exerciseCache = { uid: u, list }
+  return list
 }
 
 export async function searchExercises(q: string): Promise<Exercise[]> {
+  const lower = q.trim().toLowerCase()
+  if (!lower) return []
   const all = await getAllExercises()
-  const lower = q.toLowerCase()
-  return all.filter(e =>
+  const hits = all.filter(e =>
     e.name.toLowerCase().includes(lower) || e.muscle_group.toLowerCase().includes(lower)
   )
+  const starts = (e: Exercise) => (e.name.toLowerCase().startsWith(lower) ? 0 : 1)
+  return hits.sort((a, b) => starts(a) - starts(b)).slice(0, 8)
 }
 
 export async function getExercisesByName(names: string[]): Promise<Exercise[]> {
@@ -52,6 +66,8 @@ export async function getOrCreateExercise(
   if (snap.exists()) return { id: snap.id, ...snap.data() } as Exercise
   const data = { name, muscle_group: muscleGroup, equipment }
   await setDoc(docRef, data)
+  exerciseGen++
+  exerciseCache = null
   return { id: docRef.id, ...data }
 }
 
